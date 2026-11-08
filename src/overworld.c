@@ -185,6 +185,8 @@ static u16 KeyInterCB_DeferToEventScript(u32);
 static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
+#define HNS_COOP_MAILBOX_VERSION 2
+#define HNS_COOP_FLAG_QUEUE_SIZE 64
 
 struct HnsCoopMailbox
 {
@@ -193,14 +195,108 @@ struct HnsCoopMailbox
     volatile u16 size;
     volatile u32 transportConnected;
     volatile u32 gameReady;
+    volatile u32 outgoingFlagWrite;
+    volatile u32 outgoingFlagRead;
+    volatile u32 incomingFlagWrite;
+    volatile u32 incomingFlagRead;
+    volatile u32 outgoingFlags[HNS_COOP_FLAG_QUEUE_SIZE];
+    volatile u32 incomingFlags[HNS_COOP_FLAG_QUEUE_SIZE];
 };
 
 EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
     .magic = HNS_COOP_MAILBOX_MAGIC,
-    .version = 1,
+    .version = HNS_COOP_MAILBOX_VERSION,
     .size = sizeof(struct HnsCoopMailbox),
 };
 static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
+static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
+
+static bool8 IsCoopSharedStoryFlag(u16 flagId)
+{
+    if (flagId >= FLAG_ADVENTURE_STARTED && flagId <= FLAG_UNLOCKED_GOLDENROD_UNDERGROUND_DOOR
+        && flagId != FLAG_ROUTE25_GOT_NUGGET)
+        return TRUE;
+    if (flagId >= FLAG_DEFEATED_VIOLET_GYM && flagId <= FLAG_DEFEATED_VIRIDIAN_GYM)
+        return TRUE;
+    if (flagId >= FLAG_DEFEATED_HO_OH && flagId <= FLAG_DEFEATED_RED)
+        return TRUE;
+    if (flagId >= FLAG_BADGE01_GET && flagId <= FLAG_BADGE16_GET)
+        return TRUE;
+
+    return flagId == FLAG_GOT_PASSWORD_FROM_ETO
+        || flagId == FLAG_GOT_PASSWORD_FROM_GRUNTF
+        || flagId == FLAG_DEFEATED_SUDOWOODO
+        || flagId == FLAG_KANTO_RADIO_GOT;
+}
+
+void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
+{
+    u32 write;
+    u32 read;
+
+    // Shared story progression is monotonic: only set flags are propagated.
+    if (!value || sApplyingRemoteStoryFlag || !IsCoopSharedStoryFlag(flagId)
+        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
+        return;
+
+    write = gHnsCoopMailbox.outgoingFlagWrite;
+    read = gHnsCoopMailbox.outgoingFlagRead;
+    if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+        return;
+
+    gHnsCoopMailbox.outgoingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] = flagId | (1u << 16);
+    gHnsCoopMailbox.outgoingFlagWrite = write + 1;
+}
+
+static void Coop_QueueInitialSharedFlags(void)
+{
+    u16 flagId;
+
+    for (flagId = FLAG_ADVENTURE_STARTED; flagId <= FLAG_UNLOCKED_GOLDENROD_UNDERGROUND_DOOR; flagId++)
+        if (FlagGet(flagId) && IsCoopSharedStoryFlag(flagId))
+            Coop_QueueSharedFlagChange(flagId, TRUE);
+
+    for (flagId = FLAG_DEFEATED_VIOLET_GYM; flagId <= FLAG_DEFEATED_VIRIDIAN_GYM; flagId++)
+        if (FlagGet(flagId))
+            Coop_QueueSharedFlagChange(flagId, TRUE);
+
+    for (flagId = FLAG_DEFEATED_HO_OH; flagId <= FLAG_DEFEATED_RED; flagId++)
+        if (FlagGet(flagId))
+            Coop_QueueSharedFlagChange(flagId, TRUE);
+
+    for (flagId = FLAG_BADGE01_GET; flagId <= FLAG_BADGE16_GET; flagId++)
+        if (FlagGet(flagId))
+            Coop_QueueSharedFlagChange(flagId, TRUE);
+
+    if (FlagGet(FLAG_GOT_PASSWORD_FROM_ETO))
+        Coop_QueueSharedFlagChange(FLAG_GOT_PASSWORD_FROM_ETO, TRUE);
+    if (FlagGet(FLAG_GOT_PASSWORD_FROM_GRUNTF))
+        Coop_QueueSharedFlagChange(FLAG_GOT_PASSWORD_FROM_GRUNTF, TRUE);
+    if (FlagGet(FLAG_DEFEATED_SUDOWOODO))
+        Coop_QueueSharedFlagChange(FLAG_DEFEATED_SUDOWOODO, TRUE);
+    if (FlagGet(FLAG_KANTO_RADIO_GOT))
+        Coop_QueueSharedFlagChange(FLAG_KANTO_RADIO_GOT, TRUE);
+}
+
+static void Coop_ProcessIncomingFlags(void)
+{
+    u32 read = gHnsCoopMailbox.incomingFlagRead;
+    u32 write = gHnsCoopMailbox.incomingFlagWrite;
+
+    while (read != write)
+    {
+        u32 packed = gHnsCoopMailbox.incomingFlags[read % HNS_COOP_FLAG_QUEUE_SIZE];
+        u16 flagId = packed & 0xFFFF;
+        if ((packed >> 16) & 1)
+        {
+            sApplyingRemoteStoryFlag = TRUE;
+            FlagSet(flagId);
+            sApplyingRemoteStoryFlag = FALSE;
+        }
+        read++;
+    }
+    gHnsCoopMailbox.incomingFlagRead = read;
+}
 
 static bool32 UpdateCoopLink(void)
 {
@@ -222,6 +318,7 @@ static bool32 UpdateCoopLink(void)
             gLocalLinkPlayerId = GetMultiplayerId();
             SaveLinkPlayers(gFieldLinkPlayerCount);
             gHnsCoopMailbox.gameReady = TRUE;
+            Coop_QueueInitialSharedFlags();
             CB2_ReturnToFieldFromMultiplayer();
             return TRUE;
         }
