@@ -1735,6 +1735,13 @@ static void ResetSafariZoneFlag_(void)
     ResetSafariZoneFlag();
 }
 
+bool8 IsCoopLinkActive(void)
+{
+    return gHnsCoopMailbox.magic == HNS_COOP_MAILBOX_MAGIC
+        && gHnsCoopMailbox.gameReady
+        && gReceivedRemoteLinkPlayers;
+}
+
 bool32 IsOverworldLinkActive(void)
 {
     if (gMain.callback1 == CB1_OverworldLink)
