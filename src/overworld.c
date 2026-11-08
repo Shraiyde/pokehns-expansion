@@ -225,8 +225,7 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
 
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
         || flagId == FLAG_GOT_PASSWORD_FROM_GRUNTF
-        || flagId == FLAG_DEFEATED_SUDOWOODO
-        || flagId == FLAG_KANTO_RADIO_GOT;
+        || flagId == FLAG_DEFEATED_SUDOWOODO;
 }
 
 void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
@@ -274,8 +273,6 @@ static void Coop_QueueInitialSharedFlags(void)
         Coop_QueueSharedFlagChange(FLAG_GOT_PASSWORD_FROM_GRUNTF, TRUE);
     if (FlagGet(FLAG_DEFEATED_SUDOWOODO))
         Coop_QueueSharedFlagChange(FLAG_DEFEATED_SUDOWOODO, TRUE);
-    if (FlagGet(FLAG_KANTO_RADIO_GOT))
-        Coop_QueueSharedFlagChange(FLAG_KANTO_RADIO_GOT, TRUE);
 }
 
 static void Coop_ProcessIncomingFlags(void)
