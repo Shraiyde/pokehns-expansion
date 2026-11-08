@@ -2925,6 +2925,8 @@ static void CB1_OverworldLink(void)
     if (UpdateCoopLink())
         return;
 
+    Coop_ProcessIncomingFlags();
+
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
         u8 selfId = gLocalLinkPlayerId;
