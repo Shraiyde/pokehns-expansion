@@ -184,6 +184,63 @@ static u16 KeyInterCB_SelfIdle(u32);
 static u16 KeyInterCB_DeferToEventScript(u32);
 static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
+#define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
+
+struct HnsCoopMailbox
+{
+    volatile u32 magic;
+    volatile u16 version;
+    volatile u16 size;
+    volatile u32 transportConnected;
+    volatile u32 gameReady;
+};
+
+EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
+    .magic = HNS_COOP_MAILBOX_MAGIC,
+    .version = 1,
+    .size = sizeof(struct HnsCoopMailbox),
+};
+static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
+
+static bool32 UpdateCoopLink(void)
+{
+    if (gHnsCoopMailbox.magic != HNS_COOP_MAILBOX_MAGIC)
+        return FALSE;
+
+    if (gHnsCoopMailbox.transportConnected)
+    {
+        if (!sCoopLinkStarted)
+        {
+            gLinkType = LINKTYPE_COOP;
+            OpenLink();
+            sCoopLinkStarted = TRUE;
+        }
+
+        if (sCoopLinkStarted && gReceivedRemoteLinkPlayers && !IsOverworldLinkActive())
+        {
+            gHnsCoopMailbox.gameReady = TRUE;
+            CB2_ReturnToFieldFromMultiplayer();
+            return TRUE;
+        }
+    }
+    else if (sCoopLinkStarted)
+    {
+        CloseLink();
+        ResetAllMultiplayerState();
+        sCoopLinkStarted = FALSE;
+        gHnsCoopMailbox.gameReady = FALSE;
+
+        if (IsOverworldLinkActive())
+        {
+            SetMainCallback1(CB1_Overworld);
+            CB2_ReturnToField();
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 static void SetKeyInterceptCallback(u16 (*func)(u32));
 static void SetFieldVBlankCallback(void);
 static void FieldClearVBlankHBlankCallbacks(void);
@@ -1711,7 +1768,11 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
 void CB1_Overworld(void)
 {
     if (gMain.callback2 == CB2_Overworld)
+    {
+        if (UpdateCoopLink())
+            return;
         DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
+    }
 }
 
 #define TINT_NIGHT Q_8_8(0.456) | Q_8_8(0.456) << 8 | Q_8_8(0.615) << 16
@@ -2754,6 +2815,9 @@ static void CreateLinkPlayerSprites(void)
 
 static void CB1_OverworldLink(void)
 {
+    if (UpdateCoopLink())
+        return;
+
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
         u8 selfId = gLocalLinkPlayerId;
