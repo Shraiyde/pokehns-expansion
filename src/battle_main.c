@@ -5603,7 +5603,8 @@ static void HandleEndTurn_BattleWon(void)
 {
     gCurrentActionFuncId = 0;
 
-    if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+    if ((gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+        && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
     {
         gSpecialVar_Result = gBattleOutcome;
         gBattleTextBuff1[0] = gBattleOutcome;
@@ -5640,7 +5641,8 @@ static void HandleEndTurn_BattleWon(void)
             PlayBGM(MUS_VICTORY_TRAINER);
         }
     }
-    else if (gBattleTypeFlags & BATTLE_TYPE_TRAINER && !(gBattleTypeFlags & BATTLE_TYPE_LINK))
+    else if ((gBattleTypeFlags & BATTLE_TYPE_TRAINER)
+        && (!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP)))
     {
         BattleStopLowHpSound();
         gBattlescriptCurrInstr = BattleScript_LocalTrainerBattleWon;
@@ -5714,7 +5716,8 @@ static void HandleEndTurn_BattleLost(void)
 {
     gCurrentActionFuncId = 0;
 
-    if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+    if ((gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+        && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
     {
         if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER)
         {
@@ -6089,7 +6092,8 @@ static void ReturnFromBattleToOverworld(void)
         PartySpreadPokerus();
     }
 
-    if (gBattleTypeFlags & BATTLE_TYPE_LINK && gReceivedRemoteLinkPlayers)
+    if ((gBattleTypeFlags & BATTLE_TYPE_LINK) && gReceivedRemoteLinkPlayers
+        && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
         return;
 
     gSpecialVar_Result = gBattleOutcome;
