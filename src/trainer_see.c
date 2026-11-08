@@ -791,6 +791,7 @@ static void InitTrainerApproachTask(struct ObjectEvent *trainerObj, u8 range)
     task = &gTasks[gApproachingTrainers[gNoOfApproachingTrainers].taskId];
     task->tTrainerRange = range;
     task->tTrainerObjectEventId = gApproachingTrainers[gNoOfApproachingTrainers].objectEventId;
+    task->data[6] = sTrainerApproachTargetObjectEventId;
 }
 
 static void StartTrainerApproach(TaskFunc followupFunc)
