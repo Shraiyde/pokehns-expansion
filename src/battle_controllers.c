@@ -210,7 +210,8 @@ static void InitBtlControllersInternal(void)
         || !isMulti
         || (IsMultibattleTest())
         || (!isLink && !isRecorded)
-        || (isLink && !isDouble))
+        || (isLink && !isDouble)
+        || (gBattleTypeFlags & BATTLE_TYPE_COOP))
     {
         bool32 isPlayerPrimary;
         if (isLink)
