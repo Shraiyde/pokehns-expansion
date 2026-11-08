@@ -1197,11 +1197,19 @@ static void CB2_HandleStartMultiPartnerBattle(void)
                 gLinkPlayers[2].id = 1;
                 gLinkPlayers[3].id = 3;
                 GetFrontierTrainerName(gLinkPlayers[2].name, TRAINER_BATTLE_PARAM.opponentA);
-                GetFrontierTrainerName(gLinkPlayers[3].name, TRAINER_BATTLE_PARAM.opponentB);
                 GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentA);
                 gLinkPlayers[2].language = language;
-                GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentB);
-                gLinkPlayers[3].language = language;
+                if (gBattleTypeFlags & BATTLE_TYPE_TWO_OPPONENTS)
+                {
+                    GetFrontierTrainerName(gLinkPlayers[3].name, TRAINER_BATTLE_PARAM.opponentB);
+                    GetBattleTowerTrainerLanguage(&language, TRAINER_BATTLE_PARAM.opponentB);
+                    gLinkPlayers[3].language = language;
+                }
+                else
+                {
+                    StringCopy(gLinkPlayers[3].name, gLinkPlayers[2].name);
+                    gLinkPlayers[3].language = gLinkPlayers[2].language;
+                }
 
                 if (IsLinkTaskFinished())
                 {
