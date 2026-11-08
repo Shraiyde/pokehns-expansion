@@ -528,6 +528,12 @@ static void DoBattlePikeWildBattle(void)
 
 static void DoTrainerBattle(void)
 {
+    if (IsCoopLinkActive())
+    {
+        gBattleTypeFlags |= BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_COOP;
+        gBattleTypeFlags &= ~BATTLE_TYPE_INGAME_PARTNER;
+    }
+
     CreateBattleStartTask(GetTrainerBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_TRAINER_BATTLES);
