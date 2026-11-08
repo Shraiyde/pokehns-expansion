@@ -218,6 +218,9 @@ static bool32 UpdateCoopLink(void)
 
         if (sCoopLinkStarted && gReceivedRemoteLinkPlayers && !IsOverworldLinkActive())
         {
+            gFieldLinkPlayerCount = GetLinkPlayerCount_2();
+            gLocalLinkPlayerId = GetMultiplayerId();
+            SaveLinkPlayers(gFieldLinkPlayerCount);
             gHnsCoopMailbox.gameReady = TRUE;
             CB2_ReturnToFieldFromMultiplayer();
             return TRUE;
