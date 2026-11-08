@@ -2,6 +2,7 @@
 #include "battle_setup.h"
 #include "event_data.h"
 #include "event_object_movement.h"
+#include "overworld.h"
 #include "event_scripts.h"
 #include "field_effect.h"
 #include "field_player_avatar.h"
@@ -26,6 +27,7 @@
 // this file's functions
 static u8 CheckTrainer(u8 objectEventId);
 static u8 GetTrainerApproachDistance(struct ObjectEvent *trainerObj);
+static u8 sTrainerApproachTargetObjectEventId;
 static u8 CheckPathBetweenTrainerAndPlayer(struct ObjectEvent *trainerObj, u8 approachDistance, enum Direction direction);
 static void InitTrainerApproachTask(struct ObjectEvent *trainerObj, u8 range);
 static void Task_RunTrainerSeeFuncList(u8 taskId);
@@ -633,13 +635,11 @@ static u8 CheckTrainer(u8 objectEventId)
     return numTrainers;
 }
 
-static u8 GetTrainerApproachDistance(struct ObjectEvent *trainerObj)
+static u8 GetTrainerApproachDistanceForCoords(struct ObjectEvent *trainerObj, s16 x, s16 y)
 {
-    s16 x, y;
     u8 i;
     u8 approachDistance;
 
-    PlayerGetDestCoords(&x, &y);
     if (trainerObj->trainerType == TRAINER_TYPE_NORMAL)  // can only see in one direction
     {
         // Disable trainer approach while moving diagonally (usually moving on sideway stairs)
@@ -661,6 +661,42 @@ static u8 GetTrainerApproachDistance(struct ObjectEvent *trainerObj)
     return 0;
 }
 
+static u8 GetTrainerApproachDistance(struct ObjectEvent *trainerObj)
+{
+    s16 x, y;
+    u8 i;
+    u8 approachDistance;
+
+    if (IsCoopLinkActive())
+    {
+        // Both consoles inspect players in the same order, so the same player
+        // triggers the trainer approach on both games.
+        for (i = 0; i < gFieldLinkPlayerCount; i++)
+        {
+            u8 objectEventId;
+            if (!gLinkPlayerObjectEvents[i].active)
+                continue;
+
+            objectEventId = gLinkPlayerObjectEvents[i].objEventId;
+            if (!gObjectEvents[objectEventId].active)
+                continue;
+
+            x = gObjectEvents[objectEventId].currentCoords.x;
+            y = gObjectEvents[objectEventId].currentCoords.y;
+            approachDistance = GetTrainerApproachDistanceForCoords(trainerObj, x, y);
+            if (approachDistance)
+            {
+                sTrainerApproachTargetObjectEventId = objectEventId;
+                return approachDistance;
+            }
+        }
+        return 0;
+    }
+
+    PlayerGetDestCoords(&x, &y);
+    sTrainerApproachTargetObjectEventId = gPlayerAvatar.objectEventId;
+    return GetTrainerApproachDistanceForCoords(trainerObj, x, y);
+}
 // Returns how far south the player is from trainer. 0 if out of trainer's sight.
 static u8 GetTrainerApproachDistanceSouth(struct ObjectEvent *trainerObj, s16 range, s16 x, s16 y)
 {
@@ -859,12 +895,13 @@ static bool8 PlayerFaceApproachingTrainer(u8 taskId, struct Task *task, struct O
     TryOverrideTemplateCoordsForObjectEvent(trainerObj, GetTrainerFacingDirectionMovementType(trainerObj->facingDirection));
     OverrideTemplateCoordsForObjectEvent(trainerObj);
 
-    playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+    playerObj = &gObjectEvents[task->data[6]];
     if (ObjectEventIsMovementOverridden(playerObj) && !ObjectEventClearHeldMovementIfFinished(playerObj))
         return FALSE;
 
-    CancelPlayerForcedMovement();
-    ObjectEventSetHeldMovement(&gObjectEvents[gPlayerAvatar.objectEventId], GetFaceDirectionMovementAction(GetOppositeDirection(trainerObj->facingDirection)));
+    if (task->data[6] == gPlayerAvatar.objectEventId)
+        CancelPlayerForcedMovement();
+    ObjectEventSetHeldMovement(playerObj, GetFaceDirectionMovementAction(GetOppositeDirection(trainerObj->facingDirection)));
     task->tFuncId++; // TRSEE_PLAYER_FACE_WAIT
     return FALSE;
 }
@@ -872,7 +909,7 @@ static bool8 PlayerFaceApproachingTrainer(u8 taskId, struct Task *task, struct O
 // TRSEE_PLAYER_FACE_WAIT
 static bool8 WaitPlayerFaceApproachingTrainer(u8 taskId, struct Task *task, struct ObjectEvent *trainerObj)
 {
-    struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+    struct ObjectEvent *playerObj = &gObjectEvents[task->data[6]];
 
     if (!ObjectEventIsMovementOverridden(playerObj)
      || ObjectEventClearHeldMovementIfFinished(playerObj))
