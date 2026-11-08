@@ -155,6 +155,7 @@ mapsec_u8_t GetCurrentRegionMapSectionId(void);
 enum MapBattleScene GetCurrentMapBattleScene(void);
 void CleanupOverworldWindowsAndTilemaps(void);
 bool32 IsOverworldLinkActive(void);
+bool8 IsCoopLinkActive(void);
 void CB1_Overworld(void);
 void CB2_OverworldBasic(void);
 void UpdateTimeOfDay(void);
