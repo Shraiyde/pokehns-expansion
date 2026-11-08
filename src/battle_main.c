@@ -6082,7 +6082,7 @@ static void WaitForEvoSceneToFinish(void)
 
 static void ReturnFromBattleToOverworld(void)
 {
-    if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
+    if (!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP))
     {
         CalculatePlayerPartyCount();
         RandomlyGivePartyPokerus();
