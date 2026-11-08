@@ -186,7 +186,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
 #define HNS_COOP_MAILBOX_VERSION 2
-#define HNS_COOP_FLAG_QUEUE_SIZE 64
+#define HNS_COOP_FLAG_QUEUE_SIZE 128
 
 struct HnsCoopMailbox
 {
