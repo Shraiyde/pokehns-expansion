@@ -4495,6 +4495,7 @@ static void HandleTurnActionSelectionState(void)
                                             | BATTLE_TYPE_FRONTIER_NO_PYRAMID
                                             | BATTLE_TYPE_EREADER_TRAINER
                                             | BATTLE_TYPE_RECORDED_LINK))
+                                            && !(gBattleTypeFlags & BATTLE_TYPE_COOP)
                                             && !gTestRunnerEnabled)
                                             // Or if currently held by Sky Drop
                                             || gBattleMons[battler].volatiles.semiInvulnerable == STATE_SKY_DROP)
