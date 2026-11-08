@@ -804,7 +804,7 @@ static void StartTrainerApproach(TaskFunc followupFunc)
     else
         taskId = gApproachingTrainers[1].taskId;
 
-    if (PlayerHasFollowerNPC() && (gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_ON_FOOT))
+    if (task->data[6] == gPlayerAvatar.objectEventId && PlayerHasFollowerNPC() && (gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_ON_FOOT))
         ObjectEventForceSetHeldMovement(&gObjectEvents[GetFollowerNPCObjectId()], GetFaceDirectionAnimNum(gObjectEvents[GetFollowerNPCObjectId()].facingDirection));
 
     taskFunc = Task_RunTrainerSeeFuncList;
@@ -1231,6 +1231,12 @@ u8 GetChosenApproachingTrainerObjectEventId(u8 arrayId)
 void PlayerFaceTrainerAfterBattle(void)
 {
     struct ObjectEvent *objEvent;
+
+    // The remote player's client runs this callback too; only the owning
+    // client should force its local player sprite to face the trainer.
+    if (IsCoopLinkActive() && gTrainerApproachedPlayer == TRUE
+        && sTrainerApproachTargetObjectEventId != gPlayerAvatar.objectEventId)
+        return;
 
     if (gTrainerApproachedPlayer == TRUE)
     {
