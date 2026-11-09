@@ -1588,14 +1588,14 @@ void BattleSetup_StartTrainerBattle(void)
 {
     if (gNoOfApproachingTrainers == 2)
     {
-        if (FollowerNPCIsBattlePartner())
+        if (FollowerNPCIsBattlePartner() && !IsCoopLinkActive())
             gBattleTypeFlags = (BATTLE_TYPE_MULTI | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_TWO_OPPONENTS | BATTLE_TYPE_TRAINER);
         else
             gBattleTypeFlags = (BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TWO_OPPONENTS | BATTLE_TYPE_TRAINER);
     }
     else
     {
-        if (FollowerNPCIsBattlePartner())
+        if (FollowerNPCIsBattlePartner() && !IsCoopLinkActive())
         {
             gBattleTypeFlags = (BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TRAINER);
             TRAINER_BATTLE_PARAM.opponentB = 0xFFFF;
@@ -1717,7 +1717,7 @@ static void CB2_EndTrainerBattle(void)
     HandleBattleVariantEndParty();
 
     gIsDebugBattle = FALSE;
-    if (FollowerNPCIsBattlePartner())
+    if (FollowerNPCIsBattlePartner() && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
     {
         RestorePartyAfterFollowerNPCBattle();
         if (FNPC_FLAG_HEAL_AFTER_FOLLOWER_BATTLE != 0
