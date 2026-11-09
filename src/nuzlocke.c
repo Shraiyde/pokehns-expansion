@@ -15,7 +15,6 @@
 #include "constants/pokedex.h"
 #include "battle.h"
 #include "bug_contest.h"
-#include "link.h"
 
 EWRAM_DATA u8 NuzlockeIsCaptureBlocked = FALSE;
 EWRAM_DATA u8 NuzlockeIsSpeciesClauseActive = FALSE;
@@ -359,6 +358,26 @@ void NuzlockeDeletePartyMonOption(u8 position)
     PurgeMonOrBoxMon(TOTAL_BOXES_COUNT, position);
 }
 
+static bool8 IsCoopLocalPartyPokemon(struct Pokemon *pokemon)
+{
+    u8 i;
+    u32 personality = GetMonData(pokemon, MON_DATA_PERSONALITY, NULL);
+    u32 otId = GetMonData(pokemon, MON_DATA_OT_ID, NULL);
+
+    // Compare against this console's saved six-Pokémon party instead of
+    // relying on the temporary multi-battle slot order, which can change
+    // when a fainted Pokémon is removed and the merged party is compacted.
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        struct Pokemon *savedMon = &gSaveBlock1Ptr->playerParty[i];
+        if (GetMonData(savedMon, MON_DATA_SANITY_HAS_SPECIES, NULL)
+            && GetMonData(savedMon, MON_DATA_PERSONALITY, NULL) == personality
+            && GetMonData(savedMon, MON_DATA_OT_ID, NULL) == otId)
+            return TRUE;
+    }
+    return FALSE;
+}
+
 void NuzlockeDeleteFaintedPartyPokemon(void)
 {
     u8 i;
@@ -374,22 +393,10 @@ void NuzlockeDeleteFaintedPartyPokemon(void)
 
     for (i = 0; i < PARTY_SIZE; i++)
     {
-        // A co-op link battle temporarily merges both players' three-Pokémon
-        // teams into gPlayerParty. Each console owns only its own half; never
-        // put the remote player's fainted Pokémon into this save's PC or bag.
-        if (gBattleTypeFlags & BATTLE_TYPE_COOP)
-        {
-            u8 localLinkId = GetMultiplayerId();
-            u8 localPlayerId;
-            u8 localPartyOffset;
-
-            if (localLinkId >= MAX_RFU_PLAYERS)
-                continue;
-            localPlayerId = gLinkPlayers[localLinkId].id;
-            localPartyOffset = (localPlayerId == 0 || localPlayerId == 3) ? 0 : PARTY_SIZE / 2;
-            if (i < localPartyOffset || i >= localPartyOffset + PARTY_SIZE / 2)
-                continue;
-        }
+        // A co-op battle merges both players' teams. Only enforce death
+        // rules for Pokémon that belong to this console's saved party.
+        if ((gBattleTypeFlags & BATTLE_TYPE_COOP) && !IsCoopLocalPartyPokemon(&gPlayerParty[i]))
+            continue;
 
         pokemon = &gPlayerParty[i];
         if (GetMonData(pokemon, MON_DATA_SANITY_HAS_SPECIES, NULL)
