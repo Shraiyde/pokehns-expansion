@@ -186,7 +186,7 @@ static u16 KeyInterCB_DeferToEventScript(u32);
 static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 3
+#define HNS_COOP_MAILBOX_VERSION 4
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
 #define HNS_COOP_VAR_QUEUE_SIZE 128
 
@@ -209,6 +209,8 @@ struct HnsCoopMailbox
     volatile u32 incomingVarRead;
     volatile u32 outgoingVars[HNS_COOP_VAR_QUEUE_SIZE];
     volatile u32 incomingVars[HNS_COOP_VAR_QUEUE_SIZE];
+    volatile u32 localStorySyncReady;
+    volatile u32 remoteStorySyncReady;
 };
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
@@ -219,6 +221,7 @@ static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
+static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
 static EWRAM_DATA u32 sCoopLastIncomingFlagWrite = 0;
@@ -387,25 +390,38 @@ static void Coop_QueueInitialSharedFlags(void)
 {
     u8 scanned = 0;
 
-    // Scan the ordinary progression flags first, then the separate trainer
-    // flag range. Trainer flags live at 0x500+, beyond the badge flag range.
+    // Scan ordinary progression flags while skipping the overlapping trainer
+    // flag block. Scan trainer flags separately after badges and story flags.
     while (scanned < 16)
     {
         u16 flagId;
         u32 write;
         u32 read;
 
-        if (sCoopInitialFlagCursor <= FLAG_BADGE16_GET)
-            flagId = sCoopInitialFlagCursor++;
-        else if (sCoopInitialFlagCursor == FLAG_BADGE16_GET + 1)
+        if (!sCoopInitialTrainerFlagsStarted)
         {
-            sCoopInitialFlagCursor = TRAINER_FLAGS_START;
-            continue;
+            if (sCoopInitialFlagCursor == TRAINER_FLAGS_START)
+            {
+                sCoopInitialFlagCursor = TRAINER_FLAGS_END + 1;
+                continue;
+            }
+            if (sCoopInitialFlagCursor <= FLAG_BADGE16_GET)
+                flagId = sCoopInitialFlagCursor++;
+            else if (sCoopInitialFlagCursor == FLAG_BADGE16_GET + 1)
+            {
+                sCoopInitialTrainerFlagsStarted = TRUE;
+                sCoopInitialFlagCursor = TRAINER_FLAGS_START;
+                continue;
+            }
+            else
+                return;
         }
-        else if (sCoopInitialFlagCursor <= TRAINER_FLAGS_END)
-            flagId = sCoopInitialFlagCursor++;
         else
-            return;
+        {
+            if (sCoopInitialFlagCursor > TRAINER_FLAGS_END)
+                return;
+            flagId = sCoopInitialFlagCursor++;
+        }
 
         scanned++;
         if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
@@ -511,8 +527,11 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.outgoingVarRead = 0;
     gHnsCoopMailbox.incomingVarWrite = 0;
     gHnsCoopMailbox.incomingVarRead = 0;
+    gHnsCoopMailbox.localStorySyncReady = 0;
+    gHnsCoopMailbox.remoteStorySyncReady = 0;
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopInitialTrainerFlagsStarted = FALSE;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
     sCoopLastIncomingFlagWrite = 0;
@@ -532,7 +551,8 @@ static void Coop_BeginInitialSharedFlagSync(void)
 static void Coop_UpdateStorySyncReadiness(void)
 {
     bool32 initialScanComplete =
-        sCoopInitialFlagCursor > TRAINER_FLAGS_END
+        sCoopInitialTrainerFlagsStarted
+        && sCoopInitialFlagCursor > TRAINER_FLAGS_END
         && sCoopInitialVarCursor >= ARRAY_COUNT(sCoopSharedStoryVars);
     u32 incomingFlagWrite = gHnsCoopMailbox.incomingFlagWrite;
     u32 incomingVarWrite = gHnsCoopMailbox.incomingVarWrite;
@@ -563,7 +583,10 @@ static void Coop_UpdateStorySyncReadiness(void)
     // Require a full two seconds with no new peer updates after both local
     // queues drain, so the slower console can finish its initial state transfer.
     if (++sCoopStorySyncQuietFrames >= 120)
+    {
         sCoopStorySyncReady = TRUE;
+        gHnsCoopMailbox.localStorySyncReady = 1;
+    }
 }
 
 static bool32 UpdateCoopLink(void)
@@ -2116,7 +2139,8 @@ bool8 IsCoopLinkActive(void)
 
 bool8 Coop_IsStorySyncReady(void)
 {
-    return IsCoopLinkActive() && sCoopStorySyncReady;
+    return IsCoopLinkActive() && sCoopStorySyncReady
+        && gHnsCoopMailbox.remoteStorySyncReady;
 }
 
 bool32 IsOverworldLinkActive(void)
