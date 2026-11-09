@@ -2348,10 +2348,9 @@ bool8 Coop_IsStorySyncReady(void)
 #else
 bool8 IsCoopLinkActive(void) { return FALSE; }
 bool8 Coop_IsStorySyncReady(void) { return FALSE; }
-bool8 Coop_ArePlayersOnSameMap(void) { return FALSE; }
-void Coop_SetSioActive(bool8 active) { (void)active; }
 #endif
 
+#if IS_HNS
 bool8 Coop_ArePlayersOnSameMap(void)
 {
     return IsCoopLinkActive()
@@ -2366,6 +2365,10 @@ void Coop_SetSioActive(bool8 active)
 {
     gHnsCoopMailbox.localSioActive = active;
 }
+#else
+bool8 Coop_ArePlayersOnSameMap(void) { return FALSE; }
+void Coop_SetSioActive(bool8 active) { (void)active; }
+#endif
 
 bool32 IsOverworldLinkActive(void)
 {
@@ -3462,7 +3465,9 @@ static void CreateLinkPlayerSprites(void)
 
 static void CB1_OverworldLink(void)
 {
+#if IS_HNS
     Coop_UpdateSharedSettings();
+#endif
     if (UpdateCoopLink())
         return;
 
