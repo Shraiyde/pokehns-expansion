@@ -1862,7 +1862,8 @@ static void CB2_HandleStartMultiBattle(void)
             SetMainCallback2(BattleMainCB2);
             if (gBattleTypeFlags & BATTLE_TYPE_LINK)
             {
-                TRAINER_BATTLE_PARAM.opponentA = TRAINER_LINK_OPPONENT;
+                if (!(gBattleTypeFlags & BATTLE_TYPE_COOP))
+                    TRAINER_BATTLE_PARAM.opponentA = TRAINER_LINK_OPPONENT;
                 gBattleTypeFlags |= BATTLE_TYPE_LINK_IN_BATTLE;
             }
         }
