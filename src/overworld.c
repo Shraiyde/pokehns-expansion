@@ -418,7 +418,7 @@ void Coop_QueueSharedVarChange(u16 varId, u16 value)
 
     // These whitelisted story-state variables only advance; never propagate a reset.
     if (sApplyingRemoteStoryVar || !IsCoopSharedStoryVar(varId)
-        || value <= VarGet(varId)
+        || value == 0
         || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
         return;
 
