@@ -619,6 +619,7 @@ static bool32 UpdateCoopLink(void)
         gHnsCoopMailbox.size = sizeof(struct HnsCoopMailbox);
         gHnsCoopMailbox.transportConnected = 0;
         gHnsCoopMailbox.gameReady = 0;
+        sCoopLinkStarted = FALSE;
         Coop_ResetStorySyncQueues();
         // Publish the magic last so the Android bridge never sees a partial header.
         gHnsCoopMailbox.magic = HNS_COOP_MAILBOX_MAGIC;
