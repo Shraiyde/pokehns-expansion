@@ -5883,13 +5883,13 @@ static void HandleEndTurn_FinishBattle(void)
                 gPlayerParty[j] = gPlayerPartyBackup[j];
         }
 
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                                  | BATTLE_TYPE_RECORDED_LINK
-                                  | BATTLE_TYPE_FIRST_BATTLE
-                                  | BATTLE_TYPE_SAFARI
-                                  | BATTLE_TYPE_EREADER_TRAINER
-                                  | BATTLE_TYPE_CATCH_TUTORIAL
-                                  | BATTLE_TYPE_FRONTIER))
+        if ((!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP))
+            && !(gBattleTypeFlags & (BATTLE_TYPE_RECORDED_LINK
+                                     | BATTLE_TYPE_FIRST_BATTLE
+                                     | BATTLE_TYPE_SAFARI
+                                     | BATTLE_TYPE_EREADER_TRAINER
+                                     | BATTLE_TYPE_CATCH_TUTORIAL
+                                     | BATTLE_TYPE_FRONTIER))
             && !(gBattleTypeFlags & BATTLE_TYPE_GHOST && IsGhostBattleWithoutScope()))
         {
             for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
@@ -5914,11 +5914,11 @@ static void HandleEndTurn_FinishBattle(void)
         if (gIsFishingEncounter && IsMonShiny(&gEnemyParty[0]))
             gChainFishingDexNavStreak = 0;
 
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                                  | BATTLE_TYPE_EREADER_TRAINER
-                                  | BATTLE_TYPE_RECORDED_LINK
-                                  | BATTLE_TYPE_TRAINER_HILL
-                                  | BATTLE_TYPE_FRONTIER)))
+        if ((!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP))
+            && !(gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
+                                     | BATTLE_TYPE_RECORDED_LINK
+                                     | BATTLE_TYPE_TRAINER_HILL
+                                     | BATTLE_TYPE_FRONTIER)))
         {
             for (enum BattleSide side = 0; side < NUM_BATTLE_SIDES; side++)
             {
