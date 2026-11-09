@@ -571,6 +571,11 @@ static bool8 AreBothCoopPlayersVisibleOnMap(void)
 
 static u8 CheckTrainer(u8 objectEventId)
 {
+    // Do not let either game start a trainer encounter while the initial
+    // shared progression snapshot is still being exchanged.
+    if (IsCoopLinkActive() && !Coop_IsStorySyncReady())
+        return 0;
+
     const u8 *trainerBattlePtr;
     u8 numTrainers = 1;
 
