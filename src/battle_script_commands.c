@@ -9764,28 +9764,30 @@ static void Cmd_trysethelpinghand(void)
 static void Cmd_tryswapitems(void)
 {
     CMD_ARGS(const u8 *failInstr);
+    bool32 isNonCoopLinkBattle = (gBattleTypeFlags & BATTLE_TYPE_LINK)
+                              && !(gBattleTypeFlags & BATTLE_TYPE_COOP);
+    bool32 opponentMaySwapItems = isNonCoopLinkBattle
+        || (gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
+                              | BATTLE_TYPE_FRONTIER
+                              | BATTLE_TYPE_SECRET_BASE
+                              | BATTLE_TYPE_RECORDED_LINK
+                              | (B_TRAINERS_KNOCK_OFF_ITEMS == TRUE ? BATTLE_TYPE_TRAINER : 0)));
+    bool32 knockedOffItemsMayBeSwapped = isNonCoopLinkBattle
+        || (gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
+                              | BATTLE_TYPE_FRONTIER
+                              | BATTLE_TYPE_SECRET_BASE
+                              | BATTLE_TYPE_RECORDED_LINK));
 
-    // opponent can't swap items with player in regular battles
-    if (gBattleTypeFlags & BATTLE_TYPE_TRAINER_HILL
-        || (!IsOnPlayerSide(gBattlerAttacker)
-            && !(((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
-                 || (gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
-                                      | BATTLE_TYPE_FRONTIER
-                                      | BATTLE_TYPE_SECRET_BASE
-                                      | BATTLE_TYPE_RECORDED_LINK
-                                      | (B_TRAINERS_KNOCK_OFF_ITEMS == TRUE ? BATTLE_TYPE_TRAINER : 0)
-                                      ))))
+    // NPC opponents keep normal trainer-battle item restrictions in co-op.
+    if ((gBattleTypeFlags & BATTLE_TYPE_TRAINER_HILL)
+        || (!IsOnPlayerSide(gBattlerAttacker) && !opponentMaySwapItems))
     {
         gBattlescriptCurrInstr = cmd->failInstr;
     }
     else
     {
         // You can't swap items if they were knocked off in regular battles
-        if (!(((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
-              || (gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
-                                   | BATTLE_TYPE_FRONTIER
-                                   | BATTLE_TYPE_SECRET_BASE
-                                   | BATTLE_TYPE_RECORDED_LINK)))
+        if (!knockedOffItemsMayBeSwapped
             && (GetBattlerPartyState(gBattlerAttacker)->isKnockedOff || GetBattlerPartyState(gBattlerTarget)->isKnockedOff))
         {
             gBattlescriptCurrInstr = cmd->failInstr;
