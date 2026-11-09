@@ -1790,7 +1790,6 @@ static void SaveCoopLocalPartyAfterBattle(void)
             struct Pokemon *savedMon = &gSaveBlock1Ptr->playerParty[j];
 
             if (savedSlots[j]
-                || GetMonData(savedMon, MON_DATA_SPECIES) != species
                 || GetMonData(savedMon, MON_DATA_PERSONALITY) != personality
                 || GetMonData(savedMon, MON_DATA_OT_ID) != otId)
                 continue;
