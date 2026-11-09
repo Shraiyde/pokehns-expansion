@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-hns:
@@ -37,10 +37,14 @@ jobs:
       - name: Build Heart & Soul ROM
         run: make hns -j$(nproc) -O
 
-      - name: Upload Heart & Soul co-op ROM
-        uses: actions/upload-artifact@v4
-        with:
-          name: heart-soul-coop-rom
-          path: pokehns.gba
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish Heart & Soul co-op ROM directly to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="hns-coop-${{ github.run_number }}"
+          gh release create "$tag" pokehns.gba \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Heart & Soul Co-op ROM Build ${{ github.run_number }}" \
+            --notes "Built from commit ${{ github.sha }}. This is the patched Heart & Soul GBA ROM for the two-player co-op test. Use with the matching Android co-op APK and Windows server." \
+            --latest=false
