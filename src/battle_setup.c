@@ -526,13 +526,21 @@ static void DoBattlePikeWildBattle(void)
     TryUpdateGymLeaderRematchFromWild();
 }
 
-static void DoTrainerBattle(void)
+static void ConfigureCoopTrainerBattle(void)
 {
     if (IsCoopLinkActive())
     {
+        // All trainer battles use the existing link multi-battle controller:
+        // one active Pokémon per human player against the NPC's normal party.
+        // Wild battle setup never calls this helper.
         gBattleTypeFlags |= BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_COOP;
         gBattleTypeFlags &= ~BATTLE_TYPE_INGAME_PARTNER;
     }
+}
+
+static void DoTrainerBattle(void)
+{
+    ConfigureCoopTrainerBattle();
 
     CreateBattleStartTask(GetTrainerBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
@@ -542,6 +550,10 @@ static void DoTrainerBattle(void)
 
 static void DoBattlePyramidTrainerHillBattle(void)
 {
+    // These special NPC trainer encounters bypass DoTrainerBattle, so route
+    // them through the same co-op setup when a second human is connected.
+    ConfigureCoopTrainerBattle();
+
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
         CreateBattleStartTask(GetSpecialBattleTransition(B_TRANSITION_GROUP_B_PYRAMID), 0);
     else
