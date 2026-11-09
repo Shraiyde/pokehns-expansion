@@ -75,6 +75,7 @@
 #include "frontier_util.h"
 #include "constants/abilities.h"
 #include "constants/event_object_movement.h"
+#include "constants/flags.h"
 #include "constants/event_objects.h"
 #include "constants/layouts.h"
 #include "constants/region_map_sections.h"
