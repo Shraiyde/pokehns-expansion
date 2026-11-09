@@ -1,5 +1,6 @@
 #include "global.h"
 #include "battle.h"
+#include "link.h"
 #include "bug_contest.h"
 #include "load_save.h"
 #include "battle_setup.h"
