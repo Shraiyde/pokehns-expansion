@@ -715,6 +715,9 @@ static void Coop_UpdateSharedSettings(void)
 {
     if (gHnsCoopMailbox.hostRole)
     {
+#if RANDOMIZER_AVAILABLE
+        Randomizer_SetCoopSeed(0, FALSE);
+#endif
         gHnsCoopMailbox.localConfigRandomizer = Coop_PackRandomizerSettings();
         gHnsCoopMailbox.localConfigNuzlocke = Coop_PackNuzlockeSettings();
 #if RANDOMIZER_AVAILABLE
