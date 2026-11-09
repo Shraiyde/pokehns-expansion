@@ -185,6 +185,7 @@ static u16 KeyInterCB_SelfIdle(u32);
 static u16 KeyInterCB_DeferToEventScript(u32);
 static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
+#if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
 #define HNS_COOP_MAILBOX_VERSION 4
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
@@ -641,6 +642,17 @@ static bool32 UpdateCoopLink(void)
 
     return FALSE;
 }
+
+#else
+
+// Heart & Soul co-op mailbox support is unavailable in the base games.
+bool8 IsCoopLinkActive(void) { return FALSE; }
+bool8 Coop_IsStorySyncReady(void) { return FALSE; }
+void Coop_QueueSharedVarChange(u16 varId, u16 value) { (void)varId; (void)value; }
+void Coop_QueueSharedFlagChange(u16 flagId, bool8 value) { (void)flagId; (void)value; }
+static bool32 UpdateCoopLink(void) { return FALSE; }
+
+#endif // IS_HNS
 
 static void SetKeyInterceptCallback(u16 (*func)(u32));
 static void SetFieldVBlankCallback(void);
@@ -2257,22 +2269,19 @@ void UpdateTimeOfDay(void)
         gTimeOfDay = TIME_DAY;
     }
 
-    if (IS_HNS)
+#if IS_HNS
+    // Keep HnS day/night encounter flags aligned with the active encounter table.
+    if (gTimeOfDay == TIME_NIGHT)
     {
-        // HnS wild encounter tables only define Day and Night variants, so TIME_MORNING
-        // and TIME_EVENING both fall back to the Day table (OW_TIME_OF_DAY_FALLBACK).
-        // The overworld mons must swap on the same boundary, i.e. only at TIME_NIGHT.
-        if (gTimeOfDay == TIME_NIGHT)
-        {
-            FlagClear(FLAG_NIGHT_POKEMON);
-            FlagSet(FLAG_DAY_POKEMON);
-        }
-        else
-        {
-            FlagSet(FLAG_NIGHT_POKEMON);
-            FlagClear(FLAG_DAY_POKEMON);
-        }
+        FlagClear(FLAG_NIGHT_POKEMON);
+        FlagSet(FLAG_DAY_POKEMON);
     }
+    else
+    {
+        FlagSet(FLAG_NIGHT_POKEMON);
+        FlagClear(FLAG_DAY_POKEMON);
+    }
+#endif
 }
 
 #undef MORNING_HOUR_MIDDLE
@@ -3232,11 +3241,13 @@ static void CB1_OverworldLink(void)
     if (UpdateCoopLink())
         return;
 
+#if IS_HNS
     Coop_ProcessIncomingFlags();
     Coop_ProcessIncomingVars();
     Coop_QueueInitialSharedFlags();
     Coop_QueueInitialSharedVars();
     Coop_UpdateStorySyncReadiness();
+#endif
 
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
