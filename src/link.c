@@ -612,6 +612,8 @@ static void ProcessRecvCmds(u8 unused)
             break;
         case LINKCMD_SEND_HELD_KEYS:
             gLinkPartnersHeldKeys[i] = gRecvCmds[i][1];
+            if (gLinkType == LINKTYPE_COOP)
+                Coop_ReceiveStorySyncPacket(gRecvCmds[i][2], gRecvCmds[i][3], gRecvCmds[i][4], gRecvCmds[i][5]);
             break;
         }
     }
@@ -671,12 +673,29 @@ static void BuildSendCmd(u16 command)
         gSendCmd[0] = LINKCMD_DUMMY_2;
         break;
     case LINKCMD_SEND_HELD_KEYS:
-        if (gHeldKeyCodeToSend == 0 || gLinkTransferringData)
+    {
+        u16 storyPacket[4] = {0xFFFF, 0, 0xFFFF, 0};
+        bool8 hasStoryPacket = FALSE;
+
+        if (gLinkTransferringData)
+            break;
+
+        if (gLinkType == LINKTYPE_COOP)
+            hasStoryPacket = Coop_PopStorySyncPacket(storyPacket);
+
+        if (gHeldKeyCodeToSend == 0 && !hasStoryPacket)
             break;
 
         gSendCmd[0] = LINKCMD_SEND_HELD_KEYS;
         gSendCmd[1] = gHeldKeyCodeToSend;
+        gSendCmd[2] = storyPacket[0];
+        gSendCmd[3] = storyPacket[1];
+        gSendCmd[4] = storyPacket[2];
+        gSendCmd[5] = storyPacket[3];
+        gSendCmd[6] = 0;
+        gSendCmd[7] = 0;
         break;
+    }
     }
 }
 
