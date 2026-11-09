@@ -535,7 +535,7 @@ static bool8 AreCoopPlayersOnSameMap(void)
     // A live relay connection alone is not enough: both games must currently
     // have both link-player objects loaded on the same overworld map. If the
     // partner is elsewhere, this encounter remains a normal solo trainer fight.
-    if (!Coop_IsStorySyncReady() || gFieldLinkPlayerCount < 2)
+    if (!Coop_IsStorySyncReady() || !Coop_ArePlayersOnSameMap() || gFieldLinkPlayerCount < 2)
         return FALSE;
 
     for (i = 0; i < gFieldLinkPlayerCount; i++)
