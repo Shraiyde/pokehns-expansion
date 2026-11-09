@@ -223,8 +223,11 @@ bool8 VarSet(u16 id, u16 value)
     u16 *ptr = GetVarPointer(id);
     if (!ptr)
         return FALSE;
-    *ptr = value;
-    Coop_QueueSharedVarChange(id, value);
+    if (*ptr != value)
+    {
+        *ptr = value;
+        Coop_QueueSharedVarChange(id, value);
+    }
     return TRUE;
 }
 
