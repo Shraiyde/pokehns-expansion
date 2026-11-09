@@ -210,6 +210,7 @@ EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
 };
 static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
+static EWRAM_DATA u16 sCoopInitialTrainerFlagCursor = 0;
 
 static bool8 IsCoopSharedStoryFlag(u16 flagId)
 {
@@ -221,6 +222,8 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
     if (flagId >= FLAG_DEFEATED_HO_OH && flagId <= FLAG_DEFEATED_RED)
         return TRUE;
     if (flagId >= FLAG_BADGE01_GET && flagId <= FLAG_BADGE16_GET)
+        return TRUE;
+    if (flagId >= TRAINER_FLAGS_START && flagId <= TRAINER_FLAGS_END)
         return TRUE;
 
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
@@ -273,6 +276,33 @@ static void Coop_QueueInitialSharedFlags(void)
         Coop_QueueSharedFlagChange(FLAG_GOT_PASSWORD_FROM_GRUNTF, TRUE);
     if (FlagGet(FLAG_DEFEATED_SUDOWOODO))
         Coop_QueueSharedFlagChange(FLAG_DEFEATED_SUDOWOODO, TRUE);
+
+    // Trainer defeat flags are synchronized incrementally so a completed
+    // save with many defeated trainers cannot overflow the 128-entry mailbox.
+    sCoopInitialTrainerFlagCursor = TRAINER_FLAGS_START;
+}
+
+static void Coop_QueueInitialTrainerFlags(void)
+{
+    u8 scanned = 0;
+
+    while (sCoopInitialTrainerFlagCursor <= TRAINER_FLAGS_END && scanned < 16)
+    {
+        u16 flagId = sCoopInitialTrainerFlagCursor++;
+        scanned++;
+
+        if (FlagGet(flagId))
+        {
+            u32 write = gHnsCoopMailbox.outgoingFlagWrite;
+            u32 read = gHnsCoopMailbox.outgoingFlagRead;
+            if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+            {
+                sCoopInitialTrainerFlagCursor--;
+                return;
+            }
+            Coop_QueueSharedFlagChange(flagId, TRUE);
+        }
+    }
 }
 
 static void Coop_ProcessIncomingFlags(void)
@@ -2923,6 +2953,7 @@ static void CB1_OverworldLink(void)
         return;
 
     Coop_ProcessIncomingFlags();
+    Coop_QueueInitialTrainerFlags();
 
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
