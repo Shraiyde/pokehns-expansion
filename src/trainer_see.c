@@ -557,7 +557,7 @@ static bool8 AreBothCoopPlayersVisibleOnMap(void)
     u8 i;
     u8 activePlayers = 0;
 
-    if (!IsCoopLinkActive() || gFieldLinkPlayerCount < 2)
+    if (!IsCoopLinkActive() || !Coop_ArePlayersOnSameMap() || gFieldLinkPlayerCount < 2)
         return FALSE;
 
     for (i = 0; i < gFieldLinkPlayerCount; i++)
