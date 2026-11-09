@@ -715,14 +715,15 @@ static void Coop_UpdateSharedSettings(void)
 {
     if (gHnsCoopMailbox.hostRole)
     {
-#if RANDOMIZER_AVAILABLE
-        Randomizer_SetCoopSeed(0, FALSE);
-#endif
         u32 randomizer = Coop_PackRandomizerSettings();
         u32 nuzlocke = Coop_PackNuzlockeSettings();
         u32 seed;
 #if RANDOMIZER_AVAILABLE
+        // Force both consoles, including CHAOS mode, through the same
+        // deterministic seed while this host owns the co-op session.
+        Randomizer_SetCoopSeed(0, FALSE);
         seed = GetRandomizerSeed();
+        Randomizer_SetCoopSeed(seed, TRUE);
 #else
         seed = 0;
 #endif
