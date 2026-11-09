@@ -158,8 +158,6 @@ bool32 IsOverworldLinkActive(void);
 bool8 IsCoopLinkActive(void);
 void Coop_QueueSharedVarChange(u16 varId, u16 value);
 void Coop_QueueSharedFlagChange(u16 flagId, bool8 value);
-bool8 Coop_PopStorySyncPacket(u16 *packet);
-void Coop_ReceiveStorySyncPacket(u16 flagId, u16 flagValue, u16 varId, u16 varValue);
 void CB1_Overworld(void);
 void CB2_OverworldBasic(void);
 void UpdateTimeOfDay(void);
