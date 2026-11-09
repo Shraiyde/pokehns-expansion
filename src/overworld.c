@@ -4211,6 +4211,13 @@ static void CreateLinkPlayerSprite(u8 linkPlayerId, enum GameVersion gameVersion
 
     if (linkPlayerObjEvent->active)
     {
+#if IS_HNS
+        // Heart & Soul's remote player must use the same boy/girl avatar set
+        // selected on the remote save, independent of the link version byte.
+        objEvent->spriteId = CreateObjectGraphicsSprite(
+            GetPlayerAvatarGraphicsIdByStateIdAndGender(PLAYER_AVATAR_STATE_NORMAL, linkGender(objEvent)),
+            SpriteCB_LinkPlayer, 0, 0, 0);
+#else
         switch (gameVersion)
         {
         case VERSION_FIRE_RED:
@@ -4227,6 +4234,7 @@ static void CreateLinkPlayerSprite(u8 linkPlayerId, enum GameVersion gameVersion
         default:
             break;
         }
+#endif
 
         sprite = &gSprites[objEvent->spriteId];
         sprite->coordOffsetEnabled = TRUE;
