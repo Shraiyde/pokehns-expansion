@@ -1,0 +1,36 @@
+name: Build Heart & Soul Co-op ROM
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'data/**'
+      - 'asm/**'
+      - 'constants/**'
+      - 'graphics/**'
+      - 'Makefile'
+      - 'config.mk'
+      - '.github/workflows/build-hns-coop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-hns:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Heart & Soul source
+        uses: actions/checkout@v4
+
+      - name: Install ARM toolchain and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3
+
+      - name: Build Heart & Soul ROM
+        run: make hns -j$(nproc) -O
