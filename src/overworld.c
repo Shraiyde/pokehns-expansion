@@ -394,8 +394,8 @@ static void Coop_QueueInitialSharedFlags(void)
 {
     u8 scanned = 0;
 
-    // Scan ordinary progression flags while skipping the overlapping trainer
-    // flag block. Scan trainer flags separately after badges and story flags.
+    // Scan the full Heart & Soul story-flag range, including the late Kanto
+    // boss/password flags, then scan the separate trainer-flag block.
     while (scanned < 16)
     {
         u16 flagId;
@@ -404,21 +404,14 @@ static void Coop_QueueInitialSharedFlags(void)
 
         if (!sCoopInitialTrainerFlagsStarted)
         {
-            if (sCoopInitialFlagCursor == TRAINER_FLAGS_START)
-            {
-                sCoopInitialFlagCursor = TRAINER_FLAGS_END + 1;
-                continue;
-            }
-            if (sCoopInitialFlagCursor <= FLAG_BADGE16_GET)
+            if (sCoopInitialFlagCursor <= FLAG_DEFEATED_SUDOWOODO)
                 flagId = sCoopInitialFlagCursor++;
-            else if (sCoopInitialFlagCursor == FLAG_BADGE16_GET + 1)
+            else
             {
                 sCoopInitialTrainerFlagsStarted = TRUE;
                 sCoopInitialFlagCursor = TRAINER_FLAGS_START;
                 continue;
             }
-            else
-                return;
         }
         else
         {
