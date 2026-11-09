@@ -221,6 +221,8 @@ static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
+static EWRAM_DATA u32 sCoopLastIncomingFlagWrite = 0;
+static EWRAM_DATA u32 sCoopLastIncomingVarWrite = 0;
 
 static const u16 sCoopSharedStoryVars[] =
 {
@@ -513,6 +515,8 @@ static void Coop_ResetStorySyncQueues(void)
     sCoopInitialVarCursor = 0;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
+    sCoopLastIncomingFlagWrite = 0;
+    sCoopLastIncomingVarWrite = 0;
 }
 
 static void Coop_BeginInitialSharedFlagSync(void)
@@ -521,6 +525,8 @@ static void Coop_BeginInitialSharedFlagSync(void)
     sCoopInitialVarCursor = 0;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
+    sCoopLastIncomingFlagWrite = gHnsCoopMailbox.incomingFlagWrite;
+    sCoopLastIncomingVarWrite = gHnsCoopMailbox.incomingVarWrite;
 }
 
 static void Coop_UpdateStorySyncReadiness(void)
@@ -528,14 +534,25 @@ static void Coop_UpdateStorySyncReadiness(void)
     bool32 initialScanComplete =
         sCoopInitialFlagCursor > TRAINER_FLAGS_END
         && sCoopInitialVarCursor >= ARRAY_COUNT(sCoopSharedStoryVars);
+    u32 incomingFlagWrite = gHnsCoopMailbox.incomingFlagWrite;
+    u32 incomingVarWrite = gHnsCoopMailbox.incomingVarWrite;
     bool32 queuesEmpty =
         gHnsCoopMailbox.outgoingFlagRead == gHnsCoopMailbox.outgoingFlagWrite
-        && gHnsCoopMailbox.incomingFlagRead == gHnsCoopMailbox.incomingFlagWrite
+        && gHnsCoopMailbox.incomingFlagRead == incomingFlagWrite
         && gHnsCoopMailbox.outgoingVarRead == gHnsCoopMailbox.outgoingVarWrite
-        && gHnsCoopMailbox.incomingVarRead == gHnsCoopMailbox.incomingVarWrite;
+        && gHnsCoopMailbox.incomingVarRead == incomingVarWrite;
 
     if (sCoopStorySyncReady)
         return;
+
+    if (incomingFlagWrite != sCoopLastIncomingFlagWrite
+        || incomingVarWrite != sCoopLastIncomingVarWrite)
+    {
+        sCoopLastIncomingFlagWrite = incomingFlagWrite;
+        sCoopLastIncomingVarWrite = incomingVarWrite;
+        sCoopStorySyncQuietFrames = 0;
+        return;
+    }
 
     if (!initialScanComplete || !queuesEmpty)
     {
@@ -543,9 +560,9 @@ static void Coop_UpdateStorySyncReadiness(void)
         return;
     }
 
-    // Give the other console time to finish its initial queue as well. The
-    // Android bridge drains several encrypted mailbox entries every frame.
-    if (++sCoopStorySyncQuietFrames >= 60)
+    // Require a full two seconds with no new peer updates after both local
+    // queues drain, so the slower console can finish its initial state transfer.
+    if (++sCoopStorySyncQuietFrames >= 120)
         sCoopStorySyncReady = TRUE;
 }
 
