@@ -2607,6 +2607,21 @@ void CB2_LoadMap(void)
 
 static void CB2_LoadMap2(void)
 {
+#if IS_HNS
+    // Keep the link-player objects alive across ordinary warps. Loading the
+    // destination as a local map and reconnecting afterward needlessly resets
+    // the co-op story snapshot and can briefly expose stale map presence.
+    if (sCoopLinkStarted)
+    {
+        if (LoadMapInStepsLink(&gMain.state))
+        {
+            SetFieldVBlankCallback();
+            SetMainCallback1(CB1_OverworldLink);
+            SetMainCallback2(CB2_Overworld);
+        }
+        return;
+    }
+#endif
     DoMapLoadLoop(&gMain.state);
     SetFieldVBlankCallback();
     SetMainCallback1(CB1_Overworld);
