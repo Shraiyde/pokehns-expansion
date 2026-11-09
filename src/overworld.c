@@ -776,6 +776,10 @@ static bool32 UpdateCoopLink(void)
     }
     else if (sCoopLinkStarted)
     {
+        sCoopLastRemoteConfigReady = 0;
+#if RANDOMIZER_AVAILABLE
+        Randomizer_SetCoopSeed(0, FALSE);
+#endif
         CloseLink();
         ResetAllMultiplayerState();
         Coop_ResetStorySyncQueues();
@@ -2336,7 +2340,7 @@ void Coop_SetSioActive(bool8 active) { (void)active; }
 bool8 Coop_ArePlayersOnSameMap(void)
 {
     return IsCoopLinkActive()
-        && (gHnsCoopMailbox.hostRole || gHnsCoopMailbox.remoteConfigReady != 0)
+        && gHnsCoopMailbox.remoteConfigReady != 0
         && gHnsCoopMailbox.remoteMapReady
         && gHnsCoopMailbox.remoteSioActive
         && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
