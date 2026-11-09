@@ -1750,8 +1750,65 @@ static void HandleBattleVariantEndParty(void)
     FlagClear(B_FLAG_SKY_BATTLE);
 }
 
+static void SaveCoopLocalPartyAfterBattle(void)
+{
+    bool8 savedSlots[PARTY_SIZE] = {FALSE};
+    u8 localLinkId;
+    u8 localPlayerId;
+    u8 partyOffset;
+    u8 i;
+    u8 j;
+
+    if (!(gBattleTypeFlags & BATTLE_TYPE_COOP) || !gReceivedRemoteLinkPlayers)
+        return;
+
+    localLinkId = GetMultiplayerId();
+    if (localLinkId >= MAX_LINK_PLAYERS)
+        return;
+
+    localPlayerId = gLinkPlayers[localLinkId].id;
+    partyOffset = (localPlayerId == 0 || localPlayerId == 3) ? 0 : MULTI_PARTY_SIZE;
+
+    // The battle party is a temporary merge of both players' selected teams.
+    // Copy only this device's three Pokémon back into its own save, matching
+    // by OT ID and personality so battle-time switching cannot change slots.
+    for (i = 0; i < MULTI_PARTY_SIZE; i++)
+    {
+        struct Pokemon *battleMon = &gPlayerParty[partyOffset + i];
+        u16 species = GetMonData(battleMon, MON_DATA_SPECIES);
+        u32 personality;
+        u32 otId;
+
+        if (species == SPECIES_NONE)
+            continue;
+
+        personality = GetMonData(battleMon, MON_DATA_PERSONALITY);
+        otId = GetMonData(battleMon, MON_DATA_OT_ID);
+
+        for (j = 0; j < PARTY_SIZE; j++)
+        {
+            struct Pokemon *savedMon = &gSaveBlock1Ptr->playerParty[j];
+
+            if (savedSlots[j]
+                || GetMonData(savedMon, MON_DATA_SPECIES) != species
+                || GetMonData(savedMon, MON_DATA_PERSONALITY) != personality
+                || GetMonData(savedMon, MON_DATA_OT_ID) != otId)
+                continue;
+
+            SavePlayerPartyMon(j, battleMon);
+            savedSlots[j] = TRUE;
+            break;
+        }
+    }
+
+    // Restore this phone's full six-Pokémon party. The other player's team
+    // remains only on their own save, while this player's battle results persist.
+    LoadPlayerParty();
+}
+
 static void CB2_EndTrainerBattle(void)
 {
+    SaveCoopLocalPartyAfterBattle();
     HandleBattleVariantEndParty();
 
     gIsDebugBattle = FALSE;
