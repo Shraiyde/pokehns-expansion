@@ -798,12 +798,14 @@ static void StartTrainerApproach(TaskFunc followupFunc)
 {
     u8 taskId;
     TaskFunc taskFunc;
+    struct Task *task;
 
     if (gApproachingTrainerId == 0)
         taskId = gApproachingTrainers[0].taskId;
     else
         taskId = gApproachingTrainers[1].taskId;
 
+    task = &gTasks[taskId];
     if (task->data[6] == gPlayerAvatar.objectEventId && PlayerHasFollowerNPC() && (gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_ON_FOOT))
         ObjectEventForceSetHeldMovement(&gObjectEvents[GetFollowerNPCObjectId()], GetFaceDirectionAnimNum(gObjectEvents[GetFollowerNPCObjectId()].facingDirection));
 
