@@ -1755,7 +1755,7 @@ static void CB2_HandleStartMultiBattle(void)
                 if (gBattleTypeFlags & BATTLE_TYPE_COOP)
                 {
                     u8 partyOffset = (gLinkPlayers[id].id == 0) ? 2 : 5;
-                    gPlayerParty[partyOffset] = *(struct Pokemon *)gBlockRecvBuffer[id];
+                    memcpy(&gPlayerParty[partyOffset], gBlockRecvBuffer[id], sizeof(struct Pokemon));
                 }
                 else if (id == playerMultiplayerId)
                 {
@@ -1828,7 +1828,7 @@ static void CB2_HandleStartMultiBattle(void)
         gBattleCommunication[SPRITES_INIT_STATE2] = 0;
         if (gBattleTypeFlags & BATTLE_TYPE_LINK)
         {
-            for (id = 0; id < MAX_LINK_PLAYERS && (gLinkPlayers[id].version & 0xFF) == VERSION_EMERALD; id++);
+            for (id = 0; id < numPlayers && (gLinkPlayers[id].version & 0xFF) == VERSION_EMERALD; id++);
 
             if (id == numPlayers)
                 gBattleCommunication[MULTIUSE_STATE] = 8;
@@ -1855,7 +1855,7 @@ static void CB2_HandleStartMultiBattle(void)
         if ((GetBlockReceivedStatus() & blockMask) == blockMask)
         {
             ResetBlockReceivedFlags();
-            for (var = 0; var < 4; var++)
+            for (var = 0; var < numPlayers; var++)
             {
                 u32 blockValue = gBlockRecvBuffer[var][0];
                 if (blockValue & 4)
