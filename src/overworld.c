@@ -186,8 +186,9 @@ static u16 KeyInterCB_DeferToEventScript(u32);
 static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 2
+#define HNS_COOP_MAILBOX_VERSION 3
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
+#define HNS_COOP_VAR_QUEUE_SIZE 128
 
 struct HnsCoopMailbox
 {
@@ -202,6 +203,12 @@ struct HnsCoopMailbox
     volatile u32 incomingFlagRead;
     volatile u32 outgoingFlags[HNS_COOP_FLAG_QUEUE_SIZE];
     volatile u32 incomingFlags[HNS_COOP_FLAG_QUEUE_SIZE];
+    volatile u32 outgoingVarWrite;
+    volatile u32 outgoingVarRead;
+    volatile u32 incomingVarWrite;
+    volatile u32 incomingVarRead;
+    volatile u32 outgoingVars[HNS_COOP_VAR_QUEUE_SIZE];
+    volatile u32 incomingVars[HNS_COOP_VAR_QUEUE_SIZE];
 };
 
 EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
@@ -212,6 +219,51 @@ EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
 static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
+static EWRAM_DATA u8 sCoopInitialVarCursor = 0;
+static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
+
+static const u16 sCoopSharedStoryVars[] =
+{
+    VAR_AZALEA_TOWN_STATE,
+    VAR_BLACKTHORN_CITY_STATE,
+    VAR_BLACKTHORN_GYM_STATE,
+    VAR_CERULEAN_CITY_STATE,
+    VAR_CHERRYGROVE_CITY_STATE,
+    VAR_CIANWOOD_CITY_STATE,
+    VAR_CINNABAR_ISLAND_STATE,
+    VAR_COMPLETED_HO_OH,
+    VAR_COMPLETED_LUGIA,
+    VAR_ECRUTEAK_CITY_STATE,
+    VAR_ECRUTEAK_CITY_THEATER,
+    VAR_ELECTRODES_FAINTED,
+    VAR_ELEVATOR,
+    VAR_FUCHSIA_CITY_STATE,
+    VAR_GOLDENROD_CITY_STATE,
+    VAR_ICE_PATH_STATE,
+    VAR_ILEX_FOREST_FARFETCHD,
+    VAR_KANTO_ROCKET_STORY_STATE,
+    VAR_LEAGUE_STATE,
+    VAR_MAHOGANY_TOWN_STATE,
+    VAR_MT_SILVER_STATE,
+    VAR_NEWBARKTOWN_LABSTATE,
+    VAR_NEWBARK_TOWN_STATE,
+    VAR_NUM_BADGES,
+    VAR_OLIVINE_CITY_STATE,
+    VAR_PALLETTOWN_LABSTATE,
+    VAR_PEWTER_CITY_STATE,
+    VAR_ROUTE22_GIOVANNI_STATE,
+    VAR_ROUTE27_STATE,
+    VAR_ROUTE39_BARN,
+    VAR_RUINSOFALPH_STATE,
+    VAR_SAFARI_ZONE_GATE_STATE,
+    VAR_SSAQUA_STATE,
+    VAR_SUICUNE_ENCOUNTERS,
+    VAR_TOHJO_FALLS_GIOVANNI_STATE,
+    VAR_TRAIN,
+    VAR_VERMILION_CITY_STATE,
+    VAR_VIOLET_CITY_KIMONO_GIRL,
+    VAR_VIOLET_CITY_STATE,
+};
 
 static bool8 IsCoopSharedStoryFlag(u16 flagId)
 {
@@ -251,11 +303,84 @@ void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
     gHnsCoopMailbox.outgoingFlagWrite = write + 1;
 }
 
+static bool8 IsCoopSharedStoryVar(u16 varId)
+{
+    u32 i;
+    for (i = 0; i < ARRAY_COUNT(sCoopSharedStoryVars); i++)
+        if (sCoopSharedStoryVars[i] == varId)
+            return TRUE;
+    return FALSE;
+}
+
+void Coop_QueueSharedVarChange(u16 varId, u16 value)
+{
+    u32 write;
+    u32 read;
+
+    // These whitelisted story-state variables only advance; never propagate a reset.
+    if (sApplyingRemoteStoryVar || !IsCoopSharedStoryVar(varId)
+        || value <= VarGet(varId)
+        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
+        return;
+
+    write = gHnsCoopMailbox.outgoingVarWrite;
+    read = gHnsCoopMailbox.outgoingVarRead;
+    if (write - read >= HNS_COOP_VAR_QUEUE_SIZE)
+        return;
+
+    gHnsCoopMailbox.outgoingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)value << 16);
+    gHnsCoopMailbox.outgoingVarWrite = write + 1;
+}
+
+static void Coop_QueueInitialSharedVars(void)
+{
+    u8 scanned = 0;
+    while (sCoopInitialVarCursor < ARRAY_COUNT(sCoopSharedStoryVars) && scanned < 4)
+    {
+        u16 varId = sCoopSharedStoryVars[sCoopInitialVarCursor++];
+        u16 value = VarGet(varId);
+        scanned++;
+        if (value == 0)
+            continue;
+
+        u32 write = gHnsCoopMailbox.outgoingVarWrite;
+        u32 read = gHnsCoopMailbox.outgoingVarRead;
+        if (write - read >= HNS_COOP_VAR_QUEUE_SIZE)
+        {
+            sCoopInitialVarCursor--;
+            return;
+        }
+        gHnsCoopMailbox.outgoingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)value << 16);
+        gHnsCoopMailbox.outgoingVarWrite = write + 1;
+    }
+}
+
+static void Coop_ProcessIncomingVars(void)
+{
+    u32 read = gHnsCoopMailbox.incomingVarRead;
+    u32 write = gHnsCoopMailbox.incomingVarWrite;
+    while (read != write)
+    {
+        u32 packed = gHnsCoopMailbox.incomingVars[read % HNS_COOP_VAR_QUEUE_SIZE];
+        u16 varId = packed & 0xFFFF;
+        u16 value = packed >> 16;
+        if (IsCoopSharedStoryVar(varId) && value > VarGet(varId))
+        {
+            sApplyingRemoteStoryVar = TRUE;
+            VarSet(varId, value);
+            sApplyingRemoteStoryVar = FALSE;
+        }
+        read++;
+    }
+    gHnsCoopMailbox.incomingVarRead = read;
+}
+
 static void Coop_BeginInitialSharedFlagSync(void)
 {
     // Scan every shared progression flag incrementally. The trainer and badge
     // flag ranges together can exceed the mailbox queue capacity.
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
+    sCoopInitialVarCursor = 0;
 }
 
 static void Coop_QueueInitialSharedFlags(void)
@@ -305,6 +430,8 @@ static void Coop_ProcessIncomingFlags(void)
     }
     gHnsCoopMailbox.incomingFlagRead = read;
 }
+
+
 
 static bool32 UpdateCoopLink(void)
 {
@@ -2934,7 +3061,9 @@ static void CB1_OverworldLink(void)
         return;
 
     Coop_ProcessIncomingFlags();
+    Coop_ProcessIncomingVars();
     Coop_QueueInitialSharedFlags();
+    Coop_QueueInitialSharedVars();
 
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
