@@ -48,6 +48,7 @@
 #include "random.h"
 #include "randomizer.h"
 #include "nuzlocke.h"
+#include "overworld.h"
 #include "recorded_battle.h"
 #include "roamer.h"
 #include "safari_zone.h"
