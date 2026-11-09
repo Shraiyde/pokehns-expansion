@@ -158,6 +158,7 @@ bool32 IsOverworldLinkActive(void);
 bool8 IsCoopLinkActive(void);
 bool8 Coop_IsStorySyncReady(void);
 bool8 Coop_ArePlayersOnSameMap(void);
+void Coop_SetSioActive(bool8 active);
 void Coop_QueueSharedVarChange(u16 varId, u16 value);
 void Coop_QueueSharedFlagChange(u16 flagId, bool8 value);
 void CB1_Overworld(void);
