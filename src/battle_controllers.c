@@ -231,7 +231,19 @@ static void InitBtlControllersInternal(void)
             gBattlerPositions[B_BATTLER_3] = isPlayerPrimary ? B_POSITION_OPPONENT_RIGHT : B_POSITION_PLAYER_RIGHT;
         }
 
-        if (isLink)
+        if (isLink && isDouble && isMulti && (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        {
+            // Co-op is a two-human team against one NPC trainer party. Each
+            // console controls its own battler and receives the other human's
+            // commands through LinkPartner; both opponent battlers remain AI.
+            gBattlerControllerFuncs[GetBattlerPosition(B_BATTLER_0)] =
+                isMaster ? SetControllerToPlayer : SetControllerToLinkPartner;
+            gBattlerControllerFuncs[GetBattlerPosition(B_BATTLER_1)] = SetControllerToOpponent;
+            gBattlerControllerFuncs[GetBattlerPosition(B_BATTLER_2)] =
+                isMaster ? SetControllerToLinkPartner : SetControllerToPlayer;
+            gBattlerControllerFuncs[GetBattlerPosition(B_BATTLER_3)] = SetControllerToOpponent;
+        }
+        else if (isLink)
         {
             if (isDouble && isMulti && !isMaster)
                 gBattlerControllerFuncs[GetBattlerPosition(B_BATTLER_0)] = SetControllerToLinkPartner;
