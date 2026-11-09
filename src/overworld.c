@@ -225,6 +225,7 @@ static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
+static EWRAM_DATA bool8 sCoopInitialBadgeFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
@@ -402,9 +403,20 @@ static void Coop_QueueInitialSharedFlags(void)
         u32 write;
         u32 read;
 
-        if (!sCoopInitialTrainerFlagsStarted)
+        if (!sCoopInitialBadgeFlagsStarted)
         {
             if (sCoopInitialFlagCursor <= FLAG_DEFEATED_SUDOWOODO)
+                flagId = sCoopInitialFlagCursor++;
+            else
+            {
+                sCoopInitialBadgeFlagsStarted = TRUE;
+                sCoopInitialFlagCursor = FLAG_BADGE01_GET;
+                continue;
+            }
+        }
+        else if (!sCoopInitialTrainerFlagsStarted)
+        {
+            if (sCoopInitialFlagCursor <= FLAG_BADGE16_GET)
                 flagId = sCoopInitialFlagCursor++;
             else
             {
@@ -531,6 +543,7 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.remoteMapReady = 0;
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
