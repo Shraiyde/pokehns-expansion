@@ -148,8 +148,19 @@ bool8 IsRandomMovesActivated(void)
     return gSaveBlock3Ptr->challengeSettings.tx_Random_Moves;
 }
 
+static EWRAM_DATA u32 sCoopRandomizerSeed = 0;
+static EWRAM_DATA bool8 sCoopRandomizerSeedEnabled = FALSE;
+
+void Randomizer_SetCoopSeed(u32 seed, bool8 enabled)
+{
+    sCoopRandomizerSeed = seed;
+    sCoopRandomizerSeedEnabled = enabled;
+}
+
 u32 GetRandomizerSeed(void)
 {
+    if (sCoopRandomizerSeedEnabled)
+        return sCoopRandomizerSeed;
     #if RANDOMIZER_SEED_IS_TRAINER_ID
         return GetTrainerId(gSaveBlock2Ptr->playerTrainerId);
     #else
