@@ -218,11 +218,9 @@ EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
 };
 static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
+static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
-static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
-static EWRAM_DATA u8 sCoopInitialVarCursor = 0;
-static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 
 static const u16 sCoopSharedStoryVars[] =
 {
@@ -284,122 +282,6 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
         || flagId == FLAG_GOT_PASSWORD_FROM_GRUNTF
         || flagId == FLAG_DEFEATED_SUDOWOODO;
-}
-
-static bool8 IsCoopSharedStoryVar(u16 varId)
-{
-    switch (varId)
-    {
-    // Johto main-story map and quest states.
-    case VAR_AZALEA_TOWN_STATE:
-    case VAR_BLACKTHORN_CITY_STATE:
-    case VAR_BLACKTHORN_GYM_STATE:
-    case VAR_CHERRYGROVE_CITY_STATE:
-    case VAR_CIANWOOD_CITY_STATE:
-    case VAR_CLEFAIRY_DOLL_STATE:
-    case VAR_COMPLETED_HO_OH:
-    case VAR_COMPLETED_LUGIA:
-    case VAR_DRAGONS_DEN_QUIZ:
-    case VAR_ECRUTEAK_CITY_STATE:
-    case VAR_ECRUTEAK_CITY_THEATER:
-    case VAR_ELECTRODES_FAINTED:
-    case VAR_GOLDENROD_CITY_STATE:
-    case VAR_ICE_PATH_STATE:
-    case VAR_KANTO_ROCKET_STORY_STATE:
-    case VAR_LAKE_OF_RAGE_FISHERMAN:
-    case VAR_LEAGUE_STATE:
-    case VAR_MAHOGANY_TOWN_STATE:
-    case VAR_MT_SILVER_STATE:
-    case VAR_NEWBARKTOWN_LABSTATE:
-    case VAR_NEWBARK_TOWN_STATE:
-    case VAR_OLIVINE_CITY_STATE:
-    case VAR_ROCKET_HIDEOUT_STATUE_1:
-    case VAR_ROCKET_HIDEOUT_STATUE_2:
-    case VAR_ROCKET_HIDEOUT_STATUE_3:
-    case VAR_ROCKET_HIDEOUT_STATUE_4:
-    case VAR_ROCKET_HIDEOUT_STATUE_5:
-    case VAR_ROCKET_PASSWORD:
-    case VAR_ROUTE27_STATE:
-    case VAR_RUINSOFALPH_STATE:
-    case VAR_SPROUT_TOWER:
-    case VAR_SUICUNE_ENCOUNTERS:
-    case VAR_TOHJO_FALLS_GIOVANNI_STATE:
-    case VAR_TRAIN:
-    case VAR_VIOLET_CITY_KIMONO_GIRL:
-    case VAR_VIOLET_CITY_STATE:
-    // Kanto postgame and Johto-connected postgame story states.
-    case VAR_CELADON_CITY_STATE:
-    case VAR_CERULEAN_CITY_STATE:
-    case VAR_CINNABAR_ISLAND_STATE:
-    case VAR_FUCHSIA_CITY_STATE:
-    case VAR_LAVENDER_TOWN_STATE:
-    case VAR_PALLET_TOWN_STATE:
-    case VAR_PEWTER_CITY_STATE:
-    case VAR_ROUTE22_GIOVANNI_STATE:
-    case VAR_SAFFRON_CITY_STATE:
-    case VAR_VERMILION_CITY_STATE:
-    case VAR_VIRIDIAN_CITY_STATE:
-    case VAR_VIRIDIAN_CITY_STEVEN:
-    case VAR_ROUTE28_SCIENTIST:
-    // Later Johto-linked quest content.
-    case VAR_ALOLA_STATE:
-    case VAR_SINJOH_STORYLINE:
-    case VAR_PLATECOUNTER:
-    case VAR_REGIS_SCANNED:
-    case VAR_NOBLE_SNEASLER:
-    case VAR_NOBLE_OVERQWIL:
-    case VAR_NOBLE_WYRDEER:
-    case VAR_NOBLE_ARCANINE:
-    case VAR_NOBLE_URSALUNA:
-    case VAR_NOBLE_KLEAVOR:
-    case VAR_NOBLE_ELECTRODE:
-    case VAR_NOBLE_TYPHLOSION:
-        return TRUE;
-    default:
-        return FALSE;
-    }
-}
-
-void Coop_QueueSharedVarChange(u16 varId, u16 value)
-{
-    u32 write;
-    u32 read;
-
-    // Progress variables are monotonic. Never copy zero or roll a partner's
-    // completed story state backwards.
-    if (!value || sApplyingRemoteStoryVar || !IsCoopSharedStoryVar(varId)
-        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
-        return;
-
-    write = gHnsCoopMailbox.outgoingFlagWrite;
-    read = gHnsCoopMailbox.outgoingFlagRead;
-    if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
-        return;
-
-    // Variable IDs live in the 0x4000 range, distinct from all save flags.
-    // Reuse the existing opaque 32-bit world-sync queue: low 16 = var ID,
-    // high 16 = value. The Android relay forwards this word unchanged.
-    gHnsCoopMailbox.outgoingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] = ((u32)value << 16) | varId;
-    gHnsCoopMailbox.outgoingFlagWrite = write + 1;
-}
-
-void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
-{
-    u32 write;
-    u32 read;
-
-    // Shared story progression is monotonic: only set flags are propagated.
-    if (!value || sApplyingRemoteStoryFlag || !IsCoopSharedStoryFlag(flagId)
-        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
-        return;
-
-    write = gHnsCoopMailbox.outgoingFlagWrite;
-    read = gHnsCoopMailbox.outgoingFlagRead;
-    if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
-        return;
-
-    gHnsCoopMailbox.outgoingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] = flagId | (1u << 16);
-    gHnsCoopMailbox.outgoingFlagWrite = write + 1;
 }
 
 static bool8 IsCoopSharedStoryVar(u16 varId)
@@ -479,8 +361,7 @@ static void Coop_BeginInitialSharedFlagSync(void)
     // Scan every shared progression flag incrementally. The trainer and badge
     // flag ranges together can exceed the mailbox queue capacity.
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
-    sCoopInitialVarCursor = VAR_AZALEA_TOWN_STATE;
-    sCoopInitialVarCursor = 0;
+    sCoopInitialVarCursor = VARS_START;
 }
 
 static void Coop_QueueInitialSharedFlags(void)
@@ -553,16 +434,7 @@ static void Coop_ProcessIncomingFlags(void)
         u16 id = packed & 0xFFFF;
         u16 value = packed >> 16;
 
-        if (id >= VARS_START && id < SPECIAL_VARS_START)
-        {
-            if (value > VarGet(id))
-            {
-                sApplyingRemoteStoryVar = TRUE;
-                VarSet(id, value);
-                sApplyingRemoteStoryVar = FALSE;
-            }
-        }
-        else if (value & 1)
+        if (value & 1)
         {
             sApplyingRemoteStoryFlag = TRUE;
             FlagSet(id);
