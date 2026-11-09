@@ -555,6 +555,7 @@ static void Coop_BeginInitialSharedFlagSync(void)
 {
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
     sCoopStorySyncReady = FALSE;
     gHnsCoopMailbox.localStorySyncReady = 0;
