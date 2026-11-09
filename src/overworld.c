@@ -187,7 +187,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 4
+#define HNS_COOP_MAILBOX_VERSION 5
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
 #define HNS_COOP_VAR_QUEUE_SIZE 128
 
@@ -212,6 +212,9 @@ struct HnsCoopMailbox
     volatile u32 incomingVars[HNS_COOP_VAR_QUEUE_SIZE];
     volatile u32 localStorySyncReady;
     volatile u32 remoteStorySyncReady;
+    volatile u32 localMapId;
+    volatile u32 remoteMapId;
+    volatile u32 remoteMapReady;
 };
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
@@ -530,6 +533,9 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.incomingVarRead = 0;
     gHnsCoopMailbox.localStorySyncReady = 0;
     gHnsCoopMailbox.remoteStorySyncReady = 0;
+    gHnsCoopMailbox.localMapId = 0;
+    gHnsCoopMailbox.remoteMapId = 0;
+    gHnsCoopMailbox.remoteMapReady = 0;
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
     sCoopInitialTrainerFlagsStarted = FALSE;
@@ -2159,7 +2165,15 @@ bool8 Coop_IsStorySyncReady(void)
 #else
 bool8 IsCoopLinkActive(void) { return FALSE; }
 bool8 Coop_IsStorySyncReady(void) { return FALSE; }
+bool8 Coop_ArePlayersOnSameMap(void) { return FALSE; }
 #endif
+
+bool8 Coop_ArePlayersOnSameMap(void)
+{
+    return IsCoopLinkActive()
+        && gHnsCoopMailbox.remoteMapReady
+        && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
+}
 
 bool32 IsOverworldLinkActive(void)
 {
@@ -3245,6 +3259,8 @@ static void CB1_OverworldLink(void)
         return;
 
 #if IS_HNS
+    gHnsCoopMailbox.localMapId = (u32)gSaveBlock1Ptr->location.mapGroup
+                               | ((u32)gSaveBlock1Ptr->location.mapNum << 16);
     Coop_ProcessIncomingFlags();
     Coop_ProcessIncomingVars();
     Coop_QueueInitialSharedFlags();
