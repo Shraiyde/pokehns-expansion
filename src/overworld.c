@@ -664,7 +664,7 @@ static void Coop_ApplySharedSettings(void)
     u32 randomizer;
     u32 nuzlocke;
 
-    if (!sequence || sequence == sCoopLastRemoteConfigReady)
+    if (!sequence)
         return;
 
     randomizer = gHnsCoopMailbox.remoteConfigRandomizer;
@@ -718,14 +718,26 @@ static void Coop_UpdateSharedSettings(void)
 #if RANDOMIZER_AVAILABLE
         Randomizer_SetCoopSeed(0, FALSE);
 #endif
-        gHnsCoopMailbox.localConfigRandomizer = Coop_PackRandomizerSettings();
-        gHnsCoopMailbox.localConfigNuzlocke = Coop_PackNuzlockeSettings();
+        u32 randomizer = Coop_PackRandomizerSettings();
+        u32 nuzlocke = Coop_PackNuzlockeSettings();
+        u32 seed;
 #if RANDOMIZER_AVAILABLE
-        gHnsCoopMailbox.localRandomizerSeed = GetRandomizerSeed();
+        seed = GetRandomizerSeed();
 #else
-        gHnsCoopMailbox.localRandomizerSeed = 0;
+        seed = 0;
 #endif
-        gHnsCoopMailbox.localConfigReady = 1;
+        if (!gHnsCoopMailbox.localConfigReady
+            || gHnsCoopMailbox.localConfigRandomizer != randomizer
+            || gHnsCoopMailbox.localConfigNuzlocke != nuzlocke
+            || gHnsCoopMailbox.localRandomizerSeed != seed)
+        {
+            gHnsCoopMailbox.localConfigRandomizer = randomizer;
+            gHnsCoopMailbox.localConfigNuzlocke = nuzlocke;
+            gHnsCoopMailbox.localRandomizerSeed = seed;
+            gHnsCoopMailbox.localConfigReady++;
+            if (!gHnsCoopMailbox.localConfigReady)
+                gHnsCoopMailbox.localConfigReady = 1;
+        }
     }
     else
     {
@@ -2344,6 +2356,7 @@ bool8 Coop_ArePlayersOnSameMap(void)
 {
     return IsCoopLinkActive()
         && gHnsCoopMailbox.remoteConfigReady != 0
+        && (!gHnsCoopMailbox.hostRole || gHnsCoopMailbox.remoteConfigReady == gHnsCoopMailbox.localConfigReady)
         && gHnsCoopMailbox.remoteMapReady
         && gHnsCoopMailbox.remoteSioActive
         && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
