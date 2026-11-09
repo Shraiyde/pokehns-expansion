@@ -608,10 +608,18 @@ static void Coop_UpdateStorySyncReadiness(void)
 
 static bool32 UpdateCoopLink(void)
 {
-    if (gHnsCoopMailbox.magic != HNS_COOP_MAILBOX_MAGIC)
+    if (gHnsCoopMailbox.magic != HNS_COOP_MAILBOX_MAGIC
+        || gHnsCoopMailbox.version != HNS_COOP_MAILBOX_VERSION
+        || gHnsCoopMailbox.size != sizeof(struct HnsCoopMailbox))
     {
+        // Invalidate an old mailbox before changing its layout. This matters
+        // when an emulator keeps EWRAM alive across a ROM reset or hot reload.
+        gHnsCoopMailbox.magic = 0;
         gHnsCoopMailbox.version = HNS_COOP_MAILBOX_VERSION;
         gHnsCoopMailbox.size = sizeof(struct HnsCoopMailbox);
+        gHnsCoopMailbox.transportConnected = 0;
+        gHnsCoopMailbox.gameReady = 0;
+        Coop_ResetStorySyncQueues();
         // Publish the magic last so the Android bridge never sees a partial header.
         gHnsCoopMailbox.magic = HNS_COOP_MAILBOX_MAGIC;
     }
