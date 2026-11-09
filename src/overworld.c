@@ -542,7 +542,10 @@ static void Coop_BeginInitialSharedFlagSync(void)
 {
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopInitialTrainerFlagsStarted = FALSE;
     sCoopStorySyncReady = FALSE;
+    gHnsCoopMailbox.localStorySyncReady = 0;
+    gHnsCoopMailbox.remoteStorySyncReady = 0;
     sCoopStorySyncQuietFrames = 0;
     sCoopLastIncomingFlagWrite = gHnsCoopMailbox.incomingFlagWrite;
     sCoopLastIncomingVarWrite = gHnsCoopMailbox.incomingVarWrite;
