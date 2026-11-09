@@ -1661,7 +1661,11 @@ static void CB2_HandleStartMultiBattle(void)
                     break;
                 }
             }
-            ZeroEnemyPartyMons();
+            // Link multi battles normally replace the enemy party with the
+            // opposing human team. Co-op battles keep the deterministic NPC
+            // trainer party created during CB2_InitBattleInternal.
+            if (!(gBattleTypeFlags & BATTLE_TYPE_COOP))
+                ZeroEnemyPartyMons();
             gBattleCommunication[MULTIUSE_STATE]++;
         }
         else
