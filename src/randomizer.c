@@ -392,7 +392,7 @@ struct Sfc32State RandomizerRandSeed(enum RandomizerReason reason, u32 data1, u3
     struct Sfc32State state;
     u32 i;
 
-    if (IsChaosMode() && reason != RANDOMIZER_REASON_ABILITIES)
+    if (IsChaosMode() && reason != RANDOMIZER_REASON_ABILITIES && !sCoopRandomizerSeedEnabled)
     {
         state.a = Random32();
         state.b = Random32();
