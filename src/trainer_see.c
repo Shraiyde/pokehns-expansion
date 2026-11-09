@@ -551,6 +551,24 @@ bool8 CheckForTrainersWantingBattle(void)
     }
 }
 
+static bool8 AreBothCoopPlayersVisibleOnMap(void)
+{
+    u8 i;
+    u8 activePlayers = 0;
+
+    if (!IsCoopLinkActive() || gFieldLinkPlayerCount < 2)
+        return FALSE;
+
+    for (i = 0; i < gFieldLinkPlayerCount; i++)
+    {
+        u8 objectEventId = gLinkPlayerObjectEvents[i].objEventId;
+        if (gLinkPlayerObjectEvents[i].active && gObjectEvents[objectEventId].active)
+            activePlayers++;
+    }
+
+    return activePlayers == 2;
+}
+
 static u8 CheckTrainer(u8 objectEventId)
 {
     const u8 *trainerBattlePtr;
@@ -623,7 +641,7 @@ static u8 CheckTrainer(u8 objectEventId)
             // Requiring two usable Pokémon on this individual save would
             // incorrectly suppress double-trainer encounters when each
             // player is bringing one Pokémon.
-            if (GetMonsStateToDoubles_2() != PLAYER_HAS_TWO_USABLE_MONS && !IsCoopLinkActive())
+            if (GetMonsStateToDoubles_2() != PLAYER_HAS_TWO_USABLE_MONS && !AreBothCoopPlayersVisibleOnMap())
                 return 0;
 
             numTrainers = 2;
