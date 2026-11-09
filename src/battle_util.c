@@ -1784,9 +1784,9 @@ u32 GetBattlerAffectionHearts(enum BattlerId battler)
     if (!IsOnPlayerSide(battler))
         return AFFECTION_NO_HEARTS;
     else if (gSpeciesInfo[species].isMegaEvolution
+          || ((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
           || (gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
                                 | BATTLE_TYPE_FRONTIER
-                                | BATTLE_TYPE_LINK
                                 | BATTLE_TYPE_RECORDED_LINK
                                 | BATTLE_TYPE_SECRET_BASE)))
         return AFFECTION_NO_HEARTS;
@@ -5714,7 +5714,8 @@ enum Obedience GetAttackerObedienceForAction(void)
     u8 obedienceLevel = 0;
     u8 levelReferenced;
 
-    if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+    if (((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
+        || (gBattleTypeFlags & BATTLE_TYPE_RECORDED_LINK))
         return OBEYS;
     if (BattlerHasAi(gBattlerAttacker))
         return OBEYS;
@@ -9144,7 +9145,8 @@ bool32 ShouldGetStatBadgeBoost(u16 badgeFlag, enum BattlerId battler)
 {
     if (GetConfig(B_BADGE_BOOST) <= GEN_3 && badgeFlag != 0)
     {
-        if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_EREADER_TRAINER | BATTLE_TYPE_RECORDED_LINK | BATTLE_TYPE_FRONTIER))
+        if (((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
+            || (gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER | BATTLE_TYPE_RECORDED_LINK | BATTLE_TYPE_FRONTIER)))
             return FALSE;
         else if (!IsOnPlayerSide(battler))
             return FALSE;
@@ -9357,23 +9359,23 @@ bool32 CanStealItem(enum BattlerId battlerStealing, enum BattlerId battlerItem, 
 
     // Check if the battler trying to steal should be able to
     if (stealerSide == B_SIDE_OPPONENT
-        && !(gBattleTypeFlags &
-             (BATTLE_TYPE_EREADER_TRAINER
-              | BATTLE_TYPE_FRONTIER
-              | BATTLE_TYPE_LINK
-              | BATTLE_TYPE_RECORDED_LINK
-              | BATTLE_TYPE_SECRET_BASE
-              | (B_TRAINERS_KNOCK_OFF_ITEMS == TRUE ? BATTLE_TYPE_TRAINER : 0)
-              )))
+        && !(((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
+             || (gBattleTypeFlags &
+                 (BATTLE_TYPE_EREADER_TRAINER
+                  | BATTLE_TYPE_FRONTIER
+                  | BATTLE_TYPE_RECORDED_LINK
+                  | BATTLE_TYPE_SECRET_BASE
+                  | (B_TRAINERS_KNOCK_OFF_ITEMS == TRUE ? BATTLE_TYPE_TRAINER : 0)
+                  ))))
     {
         return FALSE;
     }
-    else if (!(gBattleTypeFlags &
-          (BATTLE_TYPE_EREADER_TRAINER
-           | BATTLE_TYPE_FRONTIER
-           | BATTLE_TYPE_LINK
-           | BATTLE_TYPE_RECORDED_LINK
-           | BATTLE_TYPE_SECRET_BASE))
+    else if (!(((gBattleTypeFlags & BATTLE_TYPE_LINK) && !(gBattleTypeFlags & BATTLE_TYPE_COOP))
+              || (gBattleTypeFlags &
+                  (BATTLE_TYPE_EREADER_TRAINER
+                   | BATTLE_TYPE_FRONTIER
+                   | BATTLE_TYPE_RECORDED_LINK
+                   | BATTLE_TYPE_SECRET_BASE)))
         && GetBattlerPartyState(battlerStealing)->isKnockedOff)
     {
         return FALSE;
