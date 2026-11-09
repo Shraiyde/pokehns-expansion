@@ -375,15 +375,27 @@ static void Coop_QueueInitialSharedFlags(void)
 {
     u8 scanned = 0;
 
-    // The shared flag ranges exceed the mailbox queue capacity, so scan a
-    // small slice each overworld frame and retry when the queue is full.
-    while (sCoopInitialFlagCursor <= FLAG_BADGE16_GET && scanned < 16)
+    // Scan the ordinary progression flags first, then the separate trainer
+    // flag range. Trainer flags live at 0x500+, beyond the badge flag range.
+    while (scanned < 16)
     {
-        u16 flagId = sCoopInitialFlagCursor++;
+        u16 flagId;
         u32 write;
         u32 read;
-        scanned++;
 
+        if (sCoopInitialFlagCursor <= FLAG_BADGE16_GET)
+            flagId = sCoopInitialFlagCursor++;
+        else if (sCoopInitialFlagCursor == FLAG_BADGE16_GET + 1)
+        {
+            sCoopInitialFlagCursor = TRAINER_FLAGS_START;
+            continue;
+        }
+        else if (sCoopInitialFlagCursor <= TRAINER_FLAGS_END)
+            flagId = sCoopInitialFlagCursor++;
+        else
+            return;
+
+        scanned++;
         if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
             continue;
 
