@@ -341,6 +341,34 @@ u8 NuzlockeFlagGet(u16 mapsec)
     return 1;
 }
 
+static void RemoveCoopMonFromSavedParty(struct Pokemon *pokemon)
+{
+    u8 i;
+    u32 personality;
+    u32 otId;
+
+    if (!(gBattleTypeFlags & BATTLE_TYPE_COOP) || !gMain.inBattle)
+        return;
+
+    personality = GetMonData(pokemon, MON_DATA_PERSONALITY, NULL);
+    otId = GetMonData(pokemon, MON_DATA_OT_ID, NULL);
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        struct Pokemon *savedMon = &gSaveBlock1Ptr->playerParty[i];
+        if (GetMonData(savedMon, MON_DATA_SANITY_HAS_SPECIES, NULL)
+            && GetMonData(savedMon, MON_DATA_PERSONALITY, NULL) == personality
+            && GetMonData(savedMon, MON_DATA_OT_ID, NULL) == otId)
+        {
+            // Persist the death in this console's save before the temporary
+            // merged battle party is discarded and the saved party is reloaded.
+            for (; i < PARTY_SIZE - 1; i++)
+                gSaveBlock1Ptr->playerParty[i] = gSaveBlock1Ptr->playerParty[i + 1];
+            ZeroMonData(&gSaveBlock1Ptr->playerParty[PARTY_SIZE - 1]);
+            return;
+        }
+    }
+}
+
 void NuzlockeDeletePartyMon(u8 position)
 {
     struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
@@ -349,12 +377,14 @@ void NuzlockeDeletePartyMon(u8 position)
     {
         CopyMonToPC(&gPlayerParty[position]);
     }
+    RemoveCoopMonFromSavedParty(&gPlayerParty[position]);
     PurgeMonOrBoxMon(TOTAL_BOXES_COUNT, position);
 }
 
 void NuzlockeDeletePartyMonOption(u8 position)
 {
     CopyMonToPC(&gPlayerParty[position]);
+    RemoveCoopMonFromSavedParty(&gPlayerParty[position]);
     PurgeMonOrBoxMon(TOTAL_BOXES_COUNT, position);
 }
 
