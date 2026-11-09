@@ -928,6 +928,7 @@ u8 LoadGameSave(u8 saveType)
     }
 
     // Save version migration: detect pre-versioned saves and run upgrades
+#if IS_HNS
     if (gSaveBlock1Ptr->saveVersionMagic != SAVE_VERSION_MAGIC)
     {
         gSaveBlock1Ptr->saveVersion = 0;
@@ -978,6 +979,8 @@ u8 LoadGameSave(u8 saveType)
         VarSet(VAR_ROUTE28_SCIENTIST, 0);
         gSaveBlock1Ptr->saveVersion = 5;
     }
+
+#endif // IS_HNS
 
     // Add version migration steps here:
     // if (gSaveBlock1Ptr->saveVersion < 1)
