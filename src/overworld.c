@@ -284,7 +284,6 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_VERMILION_CITY_STATE,
     VAR_VERMILION_CITY_STEVEN,
     VAR_VIRIDIAN_CITY_STATE,
-    VAR_VIRIDIAN_CITY_STEVEN,
     // Later postgame story arcs.
     VAR_ALOLA_STATE,
     VAR_NOBLE_ARCANINE,
