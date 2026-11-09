@@ -36,3 +36,11 @@ jobs:
 
       - name: Build Heart & Soul ROM
         run: make hns -j$(nproc) -O
+
+      - name: Upload Heart & Soul co-op ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: heart-soul-coop-rom
+          path: pokehns.gba
+          if-no-files-found: error
+          retention-days: 30
