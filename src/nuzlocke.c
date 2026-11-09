@@ -15,6 +15,7 @@
 #include "constants/pokedex.h"
 #include "battle.h"
 #include "bug_contest.h"
+#include "link.h"
 
 EWRAM_DATA u8 NuzlockeIsCaptureBlocked = FALSE;
 EWRAM_DATA u8 NuzlockeIsSpeciesClauseActive = FALSE;
@@ -373,6 +374,23 @@ void NuzlockeDeleteFaintedPartyPokemon(void)
 
     for (i = 0; i < PARTY_SIZE; i++)
     {
+        // A co-op link battle temporarily merges both players' three-Pokémon
+        // teams into gPlayerParty. Each console owns only its own half; never
+        // put the remote player's fainted Pokémon into this save's PC or bag.
+        if (gBattleTypeFlags & BATTLE_TYPE_COOP)
+        {
+            u8 localLinkId = GetMultiplayerId();
+            u8 localPlayerId;
+            u8 localPartyOffset;
+
+            if (localLinkId >= MAX_RFU_PLAYERS)
+                continue;
+            localPlayerId = gLinkPlayers[localLinkId].id;
+            localPartyOffset = (localPlayerId == 0 || localPlayerId == 3) ? 0 : PARTY_SIZE / 2;
+            if (i < localPartyOffset || i >= localPartyOffset + PARTY_SIZE / 2)
+                continue;
+        }
+
         pokemon = &gPlayerParty[i];
         if (GetMonData(pokemon, MON_DATA_SANITY_HAS_SPECIES, NULL)
             && !GetMonData(pokemon, MON_DATA_IS_EGG, NULL))
