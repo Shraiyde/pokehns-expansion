@@ -225,8 +225,10 @@ bool8 VarSet(u16 id, u16 value)
         return FALSE;
     if (*ptr != value)
     {
-        *ptr = value;
+        // Queue before mutation so the co-op layer can compare the new value
+        // against the previous local value and ignore story-state regressions.
         Coop_QueueSharedVarChange(id, value);
+        *ptr = value;
     }
     return TRUE;
 }
