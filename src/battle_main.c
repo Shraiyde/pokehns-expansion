@@ -3209,6 +3209,7 @@ void BeginBattleIntro(void)
 
 static void BattleMainCB1(void)
 {
+    Coop_SetSioActive((gBattleTypeFlags & BATTLE_TYPE_COOP) != 0);
     gBattleMainFunc();
     for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
         gBattlerControllerFuncs[battler](battler);
