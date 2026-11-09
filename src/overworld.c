@@ -646,8 +646,6 @@ static bool32 UpdateCoopLink(void)
 #else
 
 // Heart & Soul co-op mailbox support is unavailable in the base games.
-bool8 IsCoopLinkActive(void) { return FALSE; }
-bool8 Coop_IsStorySyncReady(void) { return FALSE; }
 void Coop_QueueSharedVarChange(u16 varId, u16 value) { (void)varId; (void)value; }
 void Coop_QueueSharedFlagChange(u16 flagId, bool8 value) { (void)flagId; (void)value; }
 static bool32 UpdateCoopLink(void) { return FALSE; }
@@ -2145,6 +2143,7 @@ static void ResetSafariZoneFlag_(void)
     ResetSafariZoneFlag();
 }
 
+#if IS_HNS
 bool8 IsCoopLinkActive(void)
 {
     return gHnsCoopMailbox.magic == HNS_COOP_MAILBOX_MAGIC
@@ -2157,6 +2156,10 @@ bool8 Coop_IsStorySyncReady(void)
     return IsCoopLinkActive() && sCoopStorySyncReady
         && gHnsCoopMailbox.remoteStorySyncReady;
 }
+#else
+bool8 IsCoopLinkActive(void) { return FALSE; }
+bool8 Coop_IsStorySyncReady(void) { return FALSE; }
+#endif
 
 bool32 IsOverworldLinkActive(void)
 {
