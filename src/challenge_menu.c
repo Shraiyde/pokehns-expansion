@@ -2214,7 +2214,10 @@ void CB2_InitChallengeMenu(void)
 
             // Features tab
             *GetSelectionPtr(TAB_FEATURES, ITEM_FEATURES_RTC_TYPE)     = cs->tx_Features_RTCType;
-            *GetSelectionPtr(TAB_FEATURES, ITEM_FEATURES_SHINY_CHANCE) = cs->tx_Features_ShinyChance;
+            // New games default to roughly 1/500 (the closest exact table
+            // value is 1/512). Existing saves retain their chosen setting.
+            *GetSelectionPtr(TAB_FEATURES, ITEM_FEATURES_SHINY_CHANCE) =
+                (sIsInitialSetup && cs->tx_Features_ShinyChance == 0) ? 4 : cs->tx_Features_ShinyChance;
             *GetSelectionPtr(TAB_FEATURES, ITEM_FEATURES_ITEM_DROP)    = cs->tx_Features_WildMonDropItems;
             *GetSelectionPtr(TAB_FEATURES, ITEM_FEATURES_FRONTIER_BANS)= cs->tx_Features_FrontierBans;
             *GetSelectionPtr(TAB_FEATURES, ITEM_FEATURES_SHINY_COLOR)  = cs->tx_Features_ShinyColors;
