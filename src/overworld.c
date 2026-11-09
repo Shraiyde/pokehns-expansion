@@ -85,6 +85,7 @@
 #include "constants/weather.h"
 #include "constants/vars_hns.h"
 #include "nuzlocke.h"
+#include "randomizer.h"
 #include "pokemon_storage_system.h"
 
 STATIC_ASSERT((B_FLAG_FOLLOWERS_DISABLED == 0 || OW_FOLLOWERS_ENABLED), FollowersFlagAssignedWithoutEnablingThem);
