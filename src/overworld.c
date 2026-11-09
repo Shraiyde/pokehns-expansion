@@ -211,11 +211,9 @@ struct HnsCoopMailbox
     volatile u32 incomingVars[HNS_COOP_VAR_QUEUE_SIZE];
 };
 
-EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
-    .magic = HNS_COOP_MAILBOX_MAGIC,
-    .version = HNS_COOP_MAILBOX_VERSION,
-    .size = sizeof(struct HnsCoopMailbox),
-};
+// EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
+// mailbox header at runtime instead of using a nonzero static initializer.
+EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {0};
 static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
@@ -522,7 +520,12 @@ static void Coop_BeginInitialSharedFlagSync(void)
 static bool32 UpdateCoopLink(void)
 {
     if (gHnsCoopMailbox.magic != HNS_COOP_MAILBOX_MAGIC)
-        return FALSE;
+    {
+        gHnsCoopMailbox.version = HNS_COOP_MAILBOX_VERSION;
+        gHnsCoopMailbox.size = sizeof(struct HnsCoopMailbox);
+        // Publish the magic last so the Android bridge never sees a partial header.
+        gHnsCoopMailbox.magic = HNS_COOP_MAILBOX_MAGIC;
+    }
 
     if (gHnsCoopMailbox.transportConnected)
     {
