@@ -695,7 +695,7 @@ static u8 GetTrainerApproachDistance(struct ObjectEvent *trainerObj)
     u8 i;
     u8 approachDistance;
 
-    if (IsCoopLinkActive())
+    if (IsCoopLinkActive() && Coop_ArePlayersOnSameMap())
     {
         // Both consoles inspect players in the same order, so the same player
         // triggers the trainer approach on both games.
