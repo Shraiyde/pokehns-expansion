@@ -11,6 +11,8 @@ on:
       - 'constants/**'
       - 'graphics/**'
       - 'Makefile'
+      - 'make/**'
+      - 'ld_script*.ld'
       - 'config.mk'
       - '.github/workflows/build-hns-coop.yml'
   workflow_dispatch:
