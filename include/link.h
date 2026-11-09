@@ -104,6 +104,7 @@
 #define LINKTYPE_EREADER_EM            0x5503
 #define LINKTYPE_CONTEST_GMODE         0x6601
 #define LINKTYPE_CONTEST_EMODE         0x6602
+#define LINKTYPE_COOP                  0x7777
 
 enum {
     BLOCK_REQ_SIZE_NONE, // Identical to 200
