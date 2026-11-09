@@ -287,9 +287,13 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
 static bool8 IsCoopSharedStoryVar(u16 varId)
 {
     u32 i;
+
     for (i = 0; i < ARRAY_COUNT(sCoopSharedStoryVars); i++)
+    {
         if (sCoopSharedStoryVars[i] == varId)
             return TRUE;
+    }
+
     return FALSE;
 }
 
@@ -298,9 +302,8 @@ void Coop_QueueSharedVarChange(u16 varId, u16 value)
     u32 write;
     u32 read;
 
-    // These whitelisted story-state variables only advance; never propagate a reset.
-    if (sApplyingRemoteStoryVar || !IsCoopSharedStoryVar(varId)
-        || value == 0
+    // Story-state variables only advance; never propagate a reset.
+    if (!value || sApplyingRemoteStoryVar || !IsCoopSharedStoryVar(varId)
         || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
         return;
 
@@ -313,77 +316,45 @@ void Coop_QueueSharedVarChange(u16 varId, u16 value)
     gHnsCoopMailbox.outgoingVarWrite = write + 1;
 }
 
-static void Coop_QueueInitialSharedVars(void)
+void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
 {
-    u8 scanned = 0;
-    while (sCoopInitialVarCursor < ARRAY_COUNT(sCoopSharedStoryVars) && scanned < 4)
-    {
-        u16 varId = sCoopSharedStoryVars[sCoopInitialVarCursor++];
-        u16 value = VarGet(varId);
-        scanned++;
-        if (value == 0)
-            continue;
+    u32 write;
+    u32 read;
 
-        u32 write = gHnsCoopMailbox.outgoingVarWrite;
-        u32 read = gHnsCoopMailbox.outgoingVarRead;
-        if (write - read >= HNS_COOP_VAR_QUEUE_SIZE)
-        {
-            sCoopInitialVarCursor--;
-            return;
-        }
-        gHnsCoopMailbox.outgoingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)value << 16);
-        gHnsCoopMailbox.outgoingVarWrite = write + 1;
-    }
-}
+    // Shared story progression is monotonic: only set flags are propagated.
+    if (!value || sApplyingRemoteStoryFlag || !IsCoopSharedStoryFlag(flagId)
+        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
+        return;
 
-static void Coop_ProcessIncomingVars(void)
-{
-    u32 read = gHnsCoopMailbox.incomingVarRead;
-    u32 write = gHnsCoopMailbox.incomingVarWrite;
-    while (read != write)
-    {
-        u32 packed = gHnsCoopMailbox.incomingVars[read % HNS_COOP_VAR_QUEUE_SIZE];
-        u16 varId = packed & 0xFFFF;
-        u16 value = packed >> 16;
-        if (IsCoopSharedStoryVar(varId) && value > VarGet(varId))
-        {
-            sApplyingRemoteStoryVar = TRUE;
-            VarSet(varId, value);
-            sApplyingRemoteStoryVar = FALSE;
-        }
-        read++;
-    }
-    gHnsCoopMailbox.incomingVarRead = read;
-}
+    write = gHnsCoopMailbox.outgoingFlagWrite;
+    read = gHnsCoopMailbox.outgoingFlagRead;
+    if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+        return;
 
-static void Coop_BeginInitialSharedFlagSync(void)
-{
-    // Scan every shared progression flag incrementally. The trainer and badge
-    // flag ranges together can exceed the mailbox queue capacity.
-    sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
-    sCoopInitialVarCursor = VARS_START;
+    gHnsCoopMailbox.outgoingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] = flagId | (1u << 16);
+    gHnsCoopMailbox.outgoingFlagWrite = write + 1;
 }
 
 static void Coop_QueueInitialSharedFlags(void)
 {
     u8 scanned = 0;
 
-    // FLAG_BADGE16_GET is the highest shared progression flag in this build.
-    // Filter each ID through IsCoopSharedStoryFlag so private/system flags are
-    // never copied between saves.
+    // The shared flag ranges exceed the mailbox queue capacity, so scan a
+    // small slice each overworld frame and retry when the queue is full.
     while (sCoopInitialFlagCursor <= FLAG_BADGE16_GET && scanned < 16)
     {
         u16 flagId = sCoopInitialFlagCursor++;
+        u32 write;
+        u32 read;
         scanned++;
 
         if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
             continue;
 
-        u32 write = gHnsCoopMailbox.outgoingFlagWrite;
-        u32 read = gHnsCoopMailbox.outgoingFlagRead;
+        write = gHnsCoopMailbox.outgoingFlagWrite;
+        read = gHnsCoopMailbox.outgoingFlagRead;
         if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
         {
-            // Retry this exact flag after the Android relay drains the queue.
             sCoopInitialFlagCursor--;
             return;
         }
@@ -396,18 +367,14 @@ static void Coop_QueueInitialSharedVars(void)
 {
     u8 scanned = 0;
 
-    while (sCoopInitialVarCursor <= VAR_UNUSED_HNS_0x40FF && scanned < 16)
+    while (sCoopInitialVarCursor < ARRAY_COUNT(sCoopSharedStoryVars) && scanned < 8)
     {
-        u16 varId = sCoopInitialVarCursor++;
-        u16 value;
+        u16 varId = sCoopSharedStoryVars[sCoopInitialVarCursor++];
+        u16 value = VarGet(varId);
         u32 write;
         u32 read;
         scanned++;
 
-        if (!IsCoopSharedStoryVar(varId))
-            continue;
-
-        value = VarGet(varId);
         if (!value)
             continue;
 
@@ -419,11 +386,7 @@ static void Coop_QueueInitialSharedVars(void)
             return;
         }
 
-        // Initial synchronization copies existing progress directly. The
-        // normal change hook compares against the old value and is only for
-        // future local advances.
-        gHnsCoopMailbox.outgoingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)value << 16);
-        gHnsCoopMailbox.outgoingVarWrite = write + 1;
+        Coop_QueueSharedVarChange(varId, value);
     }
 }
 
@@ -435,21 +398,50 @@ static void Coop_ProcessIncomingFlags(void)
     while (read != write)
     {
         u32 packed = gHnsCoopMailbox.incomingFlags[read % HNS_COOP_FLAG_QUEUE_SIZE];
-        u16 id = packed & 0xFFFF;
-        u16 value = packed >> 16;
+        u16 flagId = packed & 0xFFFF;
 
-        if (value & 1)
+        if ((packed >> 16) & 1)
         {
             sApplyingRemoteStoryFlag = TRUE;
-            FlagSet(id);
+            FlagSet(flagId);
             sApplyingRemoteStoryFlag = FALSE;
         }
+
         read++;
     }
+
     gHnsCoopMailbox.incomingFlagRead = read;
 }
 
+static void Coop_ProcessIncomingVars(void)
+{
+    u32 read = gHnsCoopMailbox.incomingVarRead;
+    u32 write = gHnsCoopMailbox.incomingVarWrite;
 
+    while (read != write)
+    {
+        u32 packed = gHnsCoopMailbox.incomingVars[read % HNS_COOP_VAR_QUEUE_SIZE];
+        u16 varId = packed & 0xFFFF;
+        u16 value = packed >> 16;
+
+        if (IsCoopSharedStoryVar(varId) && value > VarGet(varId))
+        {
+            sApplyingRemoteStoryVar = TRUE;
+            VarSet(varId, value);
+            sApplyingRemoteStoryVar = FALSE;
+        }
+
+        read++;
+    }
+
+    gHnsCoopMailbox.incomingVarRead = read;
+}
+
+static void Coop_BeginInitialSharedFlagSync(void)
+{
+    sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
+    sCoopInitialVarCursor = 0;
+}
 
 static bool32 UpdateCoopLink(void)
 {
