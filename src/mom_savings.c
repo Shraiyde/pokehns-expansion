@@ -1,5 +1,7 @@
 #include "global.h"
 #include "mom_savings.h"
+
+#if defined(POKEMON_HNS)
 #include "main.h"
 #include "item.h"
 #include "random.h"
@@ -541,3 +543,29 @@ void Special_MomOpenWithdrawInput(void)
 #undef tWindowMoney
 #undef tWindowInput
 #undef tWindowMessage
+
+
+#else
+
+// Heart & Soul-only save data and scripts are not present in the base
+// Emerald/FireRed/LeafGreen builds. Keep the public API linkable there.
+void InitMomSavings(void) {}
+void Mom_EnsureInitialized(void) {}
+void Mom_EnableSaving(bool8 enable) { (void)enable; }
+bool8 Mom_IsSavingEnabled(void) { return FALSE; }
+u32 Mom_GetBalance(void) { return 0; }
+bool8 Mom_TryDepositMoney(u32 amount) { (void)amount; return FALSE; }
+bool8 Mom_AutoDepositFromBattle(u32 amount) { (void)amount; return FALSE; }
+bool8 Mom_TryWithdrawMoney(u32 amount) { (void)amount; return FALSE; }
+bool8 Mom_CheckForGiftPurchase(u32 newBalance, u32 oldBalance, bool8 isAutomatic)
+{
+    (void)newBalance;
+    (void)oldBalance;
+    (void)isAutomatic;
+    return FALSE;
+}
+bool8 Mom_TryTriggerGiftCall(void) { return FALSE; }
+void Special_MomOpenDepositInput(void) {}
+void Special_MomOpenWithdrawInput(void) {}
+
+#endif // POKEMON_HNS
