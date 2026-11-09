@@ -526,13 +526,39 @@ static void DoBattlePikeWildBattle(void)
     TryUpdateGymLeaderRematchFromWild();
 }
 
+static bool8 AreCoopPlayersOnSameMap(void)
+{
+    u8 i;
+    u8 activePlayers = 0;
+
+    // A live relay connection alone is not enough: both games must currently
+    // have both link-player objects loaded on the same overworld map. If the
+    // partner is elsewhere, this encounter remains a normal solo trainer fight.
+    if (!IsCoopLinkActive() || gFieldLinkPlayerCount < 2)
+        return FALSE;
+
+    for (i = 0; i < gFieldLinkPlayerCount; i++)
+    {
+        u8 objectEventId = gLinkPlayerObjectEvents[i].objEventId;
+
+        if (!gLinkPlayerObjectEvents[i].active)
+            continue;
+        if (!gObjectEvents[objectEventId].active)
+            continue;
+
+        activePlayers++;
+    }
+
+    return activePlayers == 2;
+}
+
 static void ConfigureCoopTrainerBattle(void)
 {
-    if (IsCoopLinkActive())
+    if (AreCoopPlayersOnSameMap())
     {
-        // All trainer battles use the existing link multi-battle controller:
-        // one active Pokémon per human player against the NPC's normal party.
-        // Wild battle setup never calls this helper.
+        // Both players are present in this map. Use the existing link
+        // multi-battle controller: one active Pokémon per human player
+        // against the NPC's normal party. Wild battle setup never calls this.
         gBattleTypeFlags |= BATTLE_TYPE_MULTI | BATTLE_TYPE_LINK | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_COOP;
         gBattleTypeFlags &= ~BATTLE_TYPE_INGAME_PARTNER;
     }
