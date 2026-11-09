@@ -687,7 +687,7 @@ static void BuildSendCmd(u16 command)
             break;
 
         gSendCmd[0] = LINKCMD_SEND_HELD_KEYS;
-        gSendCmd[1] = gHeldKeyCodeToSend;
+        gSendCmd[1] = gHeldKeyCodeToSend != 0 ? gHeldKeyCodeToSend : LINK_KEY_CODE_EMPTY;
         gSendCmd[2] = storyPacket[0];
         gSendCmd[3] = storyPacket[1];
         gSendCmd[4] = storyPacket[2];
