@@ -1759,7 +1759,7 @@ static void SaveCoopLocalPartyAfterBattle(void)
     u8 i;
     u8 j;
 
-    if (!(gBattleTypeFlags & BATTLE_TYPE_COOP) || !gReceivedRemoteLinkPlayers)
+    if (!(gBattleTypeFlags & BATTLE_TYPE_COOP))
         return;
 
     localLinkId = GetMultiplayerId();
