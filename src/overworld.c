@@ -4219,6 +4219,7 @@ static void CreateLinkPlayerSprite(u8 linkPlayerId, enum GameVersion gameVersion
     if (linkPlayerObjEvent->active)
     {
 #if IS_HNS
+        UNUSED(gameVersion);
         // Heart & Soul's remote player must use the same boy/girl avatar set
         // selected on the remote save, independent of the link version byte.
         objEvent->spriteId = CreateObjectGraphicsSprite(
