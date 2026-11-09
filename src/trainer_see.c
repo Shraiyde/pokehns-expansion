@@ -619,7 +619,11 @@ static u8 CheckTrainer(u8 objectEventId)
             || temp->params.mode == TRAINER_BATTLE_REMATCH_DOUBLE
             || temp->params.mode == TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE)
         {
-            if (GetMonsStateToDoubles_2() != PLAYER_HAS_TWO_USABLE_MONS)
+            // In co-op, the second human trainer supplies the partner slot.
+            // Requiring two usable Pokémon on this individual save would
+            // incorrectly suppress double-trainer encounters when each
+            // player is bringing one Pokémon.
+            if (GetMonsStateToDoubles_2() != PLAYER_HAS_TWO_USABLE_MONS && !IsCoopLinkActive())
                 return 0;
 
             numTrainers = 2;
