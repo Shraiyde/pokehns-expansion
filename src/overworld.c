@@ -411,15 +411,19 @@ static void Coop_QueueInitialSharedVars(void)
         if (!value)
             continue;
 
-        write = gHnsCoopMailbox.outgoingFlagWrite;
-        read = gHnsCoopMailbox.outgoingFlagRead;
-        if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+        write = gHnsCoopMailbox.outgoingVarWrite;
+        read = gHnsCoopMailbox.outgoingVarRead;
+        if (write - read >= HNS_COOP_VAR_QUEUE_SIZE)
         {
             sCoopInitialVarCursor--;
             return;
         }
 
-        Coop_QueueSharedVarChange(varId, value);
+        // Initial synchronization copies existing progress directly. The
+        // normal change hook compares against the old value and is only for
+        // future local advances.
+        gHnsCoopMailbox.outgoingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)value << 16);
+        gHnsCoopMailbox.outgoingVarWrite = write + 1;
     }
 }
 
