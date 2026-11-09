@@ -1686,7 +1686,7 @@ static void CB2_HandleStartMultiBattle(void)
                 {
                     // Both connected trainers are allies. Keep their selected teams
                     // in the same party slots on both consoles.
-                    u8 partyOffset = (gLinkPlayers[id].id == 0) ? 0 : MULTI_PARTY_SIZE;
+                    u8 partyOffset = (gLinkPlayers[id].id == 0 || gLinkPlayers[id].id == 3) ? 0 : MULTI_PARTY_SIZE;
                     memcpy(gPlayerParty + partyOffset, gBlockRecvBuffer[id], sizeof(struct Pokemon) * 2);
                 }
                 else if (id == playerMultiplayerId)
@@ -1754,7 +1754,7 @@ static void CB2_HandleStartMultiBattle(void)
             {
                 if (gBattleTypeFlags & BATTLE_TYPE_COOP)
                 {
-                    u8 partyOffset = (gLinkPlayers[id].id == 0) ? 2 : 5;
+                    u8 partyOffset = (gLinkPlayers[id].id == 0 || gLinkPlayers[id].id == 3) ? 2 : 5;
                     memcpy(&gPlayerParty[partyOffset], gBlockRecvBuffer[id], sizeof(struct Pokemon));
                 }
                 else if (id == playerMultiplayerId)
