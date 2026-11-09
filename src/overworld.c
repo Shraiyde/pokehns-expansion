@@ -219,6 +219,8 @@ static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
+static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
+static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
 
 static const u16 sCoopSharedStoryVars[] =
 {
@@ -509,12 +511,42 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.incomingVarRead = 0;
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopStorySyncReady = FALSE;
+    sCoopStorySyncQuietFrames = 0;
 }
 
 static void Coop_BeginInitialSharedFlagSync(void)
 {
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopStorySyncReady = FALSE;
+    sCoopStorySyncQuietFrames = 0;
+}
+
+static void Coop_UpdateStorySyncReadiness(void)
+{
+    bool32 initialScanComplete =
+        sCoopInitialFlagCursor > TRAINER_FLAGS_END
+        && sCoopInitialVarCursor >= ARRAY_COUNT(sCoopSharedStoryVars);
+    bool32 queuesEmpty =
+        gHnsCoopMailbox.outgoingFlagRead == gHnsCoopMailbox.outgoingFlagWrite
+        && gHnsCoopMailbox.incomingFlagRead == gHnsCoopMailbox.incomingFlagWrite
+        && gHnsCoopMailbox.outgoingVarRead == gHnsCoopMailbox.outgoingVarWrite
+        && gHnsCoopMailbox.incomingVarRead == gHnsCoopMailbox.incomingVarWrite;
+
+    if (sCoopStorySyncReady)
+        return;
+
+    if (!initialScanComplete || !queuesEmpty)
+    {
+        sCoopStorySyncQuietFrames = 0;
+        return;
+    }
+
+    // Give the other console time to finish its initial queue as well. The
+    // Android bridge drains several encrypted mailbox entries every frame.
+    if (++sCoopStorySyncQuietFrames >= 60)
+        sCoopStorySyncReady = TRUE;
 }
 
 static bool32 UpdateCoopLink(void)
@@ -2065,6 +2097,11 @@ bool8 IsCoopLinkActive(void)
         && gReceivedRemoteLinkPlayers;
 }
 
+bool8 Coop_IsStorySyncReady(void)
+{
+    return IsCoopLinkActive() && sCoopStorySyncReady;
+}
+
 bool32 IsOverworldLinkActive(void)
 {
     if (gMain.callback1 == CB1_OverworldLink)
@@ -3155,6 +3192,7 @@ static void CB1_OverworldLink(void)
     Coop_ProcessIncomingVars();
     Coop_QueueInitialSharedFlags();
     Coop_QueueInitialSharedVars();
+    Coop_UpdateStorySyncReadiness();
 
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
