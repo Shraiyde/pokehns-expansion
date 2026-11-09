@@ -1223,8 +1223,25 @@ static void SetPlayerCoordsFromWarp(void)
     }
 }
 
+#if IS_HNS
+static void Coop_MarkMapTransition(void)
+{
+    // Stop advertising the old map while map data and object events are being
+    // replaced. The peer will treat this as "not currently in the overworld"
+    // until CB1_OverworldLink publishes the new map identity after loading.
+    if (gHnsCoopMailbox.magic == HNS_COOP_MAILBOX_MAGIC)
+    {
+        gHnsCoopMailbox.localSioActive = 0;
+        gHnsCoopMailbox.localMapId = 0;
+    }
+}
+#endif
+
 void WarpIntoMap(void)
 {
+#if IS_HNS
+    Coop_MarkMapTransition();
+#endif
     ApplyCurrentWarp();
     LoadCurrentMapData();
     SetPlayerCoordsFromWarp();
@@ -1407,6 +1424,9 @@ bool8 SetDiveWarpDive(u16 x, u16 y)
 
 void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
 {
+#if IS_HNS
+    Coop_MarkMapTransition();
+#endif
     SetWarpDestination(mapGroup, mapNum, WARP_ID_NONE, -1, -1);
 
     // Dont transition map music between BF Outside West/East
