@@ -303,8 +303,9 @@ void Coop_QueueSharedVarChange(u16 varId, u16 value)
     u32 read;
 
     // Story-state variables only advance; never propagate a reset.
-    if (!value || sApplyingRemoteStoryVar || !IsCoopSharedStoryVar(varId)
-        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
+    if (!value || value <= VarGet(varId) || sApplyingRemoteStoryVar
+        || !IsCoopSharedStoryVar(varId) || !gHnsCoopMailbox.gameReady
+        || !gReceivedRemoteLinkPlayers)
         return;
 
     write = gHnsCoopMailbox.outgoingVarWrite;
@@ -386,7 +387,11 @@ static void Coop_QueueInitialSharedVars(void)
             return;
         }
 
-        Coop_QueueSharedVarChange(varId, value);
+        // Initial sync must send the existing nonzero value even though it
+        // already equals the local variable; runtime updates use the monotonic
+        // increase check in Coop_QueueSharedVarChange.
+        gHnsCoopMailbox.outgoingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)value << 16);
+        gHnsCoopMailbox.outgoingVarWrite = write + 1;
     }
 }
 
