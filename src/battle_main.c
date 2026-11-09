@@ -1446,7 +1446,7 @@ static void CB2_PreInitMultiBattle(void)
     u32 *savedBattleTypeFlags;
     void (**savedCallback)(void);
 
-    if (gBattleTypeFlags & BATTLE_TYPE_BATTLE_TOWER)
+    if (gBattleTypeFlags & (BATTLE_TYPE_BATTLE_TOWER | BATTLE_TYPE_COOP))
     {
         numPlayers = 2;
         blockMask = 3;
@@ -1576,6 +1576,8 @@ static void CB2_HandleStartMultiBattle(void)
     u8 playerMultiplayerId;
     s32 id;
     u8 var;
+    u8 numPlayers = (gBattleTypeFlags & BATTLE_TYPE_COOP) ? 2 : MAX_LINK_PLAYERS;
+    u8 blockMask = (1 << numPlayers) - 1;
 
     playerMultiplayerId = GetMultiplayerId();
     gBattleScripting.multiplayerId = playerMultiplayerId;
@@ -1628,10 +1630,10 @@ static void CB2_HandleStartMultiBattle(void)
         }
         break;
     case 2:
-        if ((GetBlockReceivedStatus() & 0xF) == 0xF)
+        if ((GetBlockReceivedStatus() & blockMask) == blockMask)
         {
             ResetBlockReceivedFlags();
-            FindLinkBattleMaster(4, playerMultiplayerId);
+            FindLinkBattleMaster(numPlayers, playerMultiplayerId);
             SetAllPlayersBerryData();
             var = CreateTask(InitLinkBattleVsScreen, 0);
             gTasks[var].data[1] = 0x10E;
@@ -1640,7 +1642,7 @@ static void CB2_HandleStartMultiBattle(void)
             gTasks[var].data[3] = 0;
             gTasks[var].data[4] = 0;
 
-            for (id = 0; id < MAX_LINK_PLAYERS; id++)
+            for (id = 0; id < numPlayers; id++)
             {
                 RecordedBattle_SetFrontierPassFlagFromHword(gBlockRecvBuffer[id][1]);
                 switch (gLinkPlayers[id].id)
@@ -1675,12 +1677,19 @@ static void CB2_HandleStartMultiBattle(void)
         }
         break;
     case 4:
-        if ((GetBlockReceivedStatus() & 0xF) == 0xF)
+        if ((GetBlockReceivedStatus() & blockMask) == blockMask)
         {
             ResetBlockReceivedFlags();
-            for (id = 0; id < MAX_LINK_PLAYERS; id++)
+            for (id = 0; id < numPlayers; id++)
             {
-                if (id == playerMultiplayerId)
+                if (gBattleTypeFlags & BATTLE_TYPE_COOP)
+                {
+                    // Both connected trainers are allies. Keep their selected teams
+                    // in the same party slots on both consoles.
+                    u8 partyOffset = (gLinkPlayers[id].id == 0) ? 0 : MULTI_PARTY_SIZE;
+                    memcpy(gPlayerParty + partyOffset, gBlockRecvBuffer[id], sizeof(struct Pokemon) * 2);
+                }
+                else if (id == playerMultiplayerId)
                 {
                     switch (gLinkPlayers[id].id)
                     {
@@ -1738,12 +1747,17 @@ static void CB2_HandleStartMultiBattle(void)
         }
         break;
     case 6:
-        if ((GetBlockReceivedStatus() & 0xF) == 0xF)
+        if ((GetBlockReceivedStatus() & blockMask) == blockMask)
         {
             ResetBlockReceivedFlags();
-            for (id = 0; id < MAX_LINK_PLAYERS; id++)
+            for (id = 0; id < numPlayers; id++)
             {
-                if (id == playerMultiplayerId)
+                if (gBattleTypeFlags & BATTLE_TYPE_COOP)
+                {
+                    u8 partyOffset = (gLinkPlayers[id].id == 0) ? 2 : 5;
+                    gPlayerParty[partyOffset] = *(struct Pokemon *)gBlockRecvBuffer[id];
+                }
+                else if (id == playerMultiplayerId)
                 {
                     switch (gLinkPlayers[id].id)
                     {
@@ -1816,7 +1830,7 @@ static void CB2_HandleStartMultiBattle(void)
         {
             for (id = 0; id < MAX_LINK_PLAYERS && (gLinkPlayers[id].version & 0xFF) == VERSION_EMERALD; id++);
 
-            if (id == MAX_LINK_PLAYERS)
+            if (id == numPlayers)
                 gBattleCommunication[MULTIUSE_STATE] = 8;
             else
                 gBattleCommunication[MULTIUSE_STATE] = 10;
@@ -1838,7 +1852,7 @@ static void CB2_HandleStartMultiBattle(void)
         }
         break;
     case 9:
-        if ((GetBlockReceivedStatus() & 0xF) == 0xF)
+        if ((GetBlockReceivedStatus() & blockMask) == blockMask)
         {
             ResetBlockReceivedFlags();
             for (var = 0; var < 4; var++)
