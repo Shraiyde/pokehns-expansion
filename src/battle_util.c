@@ -10928,11 +10928,11 @@ void TryUpdateEvolutionTracker(enum EvolutionConditions evolutionCondition, u32 
 
     if (IsOnPlayerSide(gBattlerAttacker)
      && ((TESTING && IsDoubleBattle()) // To be removed when Wild Double Battles are added to tests
-     || !(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                             | BATTLE_TYPE_EREADER_TRAINER
-                             | BATTLE_TYPE_RECORDED_LINK
-                             | BATTLE_TYPE_TRAINER_HILL
-                             | BATTLE_TYPE_FRONTIER))))
+      || ((!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP))
+          && !(gBattleTypeFlags & (BATTLE_TYPE_EREADER_TRAINER
+                                   | BATTLE_TYPE_RECORDED_LINK
+                                   | BATTLE_TYPE_TRAINER_HILL
+                                   | BATTLE_TYPE_FRONTIER))))
     {
         const struct Evolution *evolutions = GetSpeciesEvolutions(gBattleMons[gBattlerAttacker].species);
         if (evolutions == NULL)
