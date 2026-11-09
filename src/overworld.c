@@ -489,67 +489,6 @@ static void Coop_ProcessIncomingVars(void)
     gHnsCoopMailbox.incomingVarRead = read;
 }
 
-bool8 Coop_PopStorySyncPacket(u16 *packet)
-{
-    bool8 hasPacket = FALSE;
-
-    if (packet == NULL)
-        return FALSE;
-
-    packet[0] = 0xFFFF;
-    packet[1] = 0;
-    packet[2] = 0xFFFF;
-    packet[3] = 0;
-
-    if (gHnsCoopMailbox.outgoingFlagRead != gHnsCoopMailbox.outgoingFlagWrite)
-    {
-        u32 packed = gHnsCoopMailbox.outgoingFlags[gHnsCoopMailbox.outgoingFlagRead % HNS_COOP_FLAG_QUEUE_SIZE];
-        packet[0] = packed & 0xFFFF;
-        packet[1] = (packed >> 16) & 1;
-        gHnsCoopMailbox.outgoingFlagRead++;
-        hasPacket = TRUE;
-    }
-
-    if (gHnsCoopMailbox.outgoingVarRead != gHnsCoopMailbox.outgoingVarWrite)
-    {
-        u32 packed = gHnsCoopMailbox.outgoingVars[gHnsCoopMailbox.outgoingVarRead % HNS_COOP_VAR_QUEUE_SIZE];
-        packet[2] = packed & 0xFFFF;
-        packet[3] = packed >> 16;
-        gHnsCoopMailbox.outgoingVarRead++;
-        hasPacket = TRUE;
-    }
-
-    return hasPacket;
-}
-
-void Coop_ReceiveStorySyncPacket(u16 flagId, u16 flagValue, u16 varId, u16 varValue)
-{
-    u32 write;
-    u32 read;
-
-    if (flagId != 0xFFFF && flagValue && IsCoopSharedStoryFlag(flagId))
-    {
-        write = gHnsCoopMailbox.incomingFlagWrite;
-        read = gHnsCoopMailbox.incomingFlagRead;
-        if (write - read < HNS_COOP_FLAG_QUEUE_SIZE)
-        {
-            gHnsCoopMailbox.incomingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] = flagId | (1u << 16);
-            gHnsCoopMailbox.incomingFlagWrite = write + 1;
-        }
-    }
-
-    if (varId != 0xFFFF && varValue && IsCoopSharedStoryVar(varId))
-    {
-        write = gHnsCoopMailbox.incomingVarWrite;
-        read = gHnsCoopMailbox.incomingVarRead;
-        if (write - read < HNS_COOP_VAR_QUEUE_SIZE)
-        {
-            gHnsCoopMailbox.incomingVars[write % HNS_COOP_VAR_QUEUE_SIZE] = varId | ((u32)varValue << 16);
-            gHnsCoopMailbox.incomingVarWrite = write + 1;
-        }
-    }
-}
-
 static void Coop_ResetStorySyncQueues(void)
 {
     gHnsCoopMailbox.outgoingFlagWrite = 0;
