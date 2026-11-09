@@ -211,7 +211,7 @@ EWRAM_DATA struct HnsCoopMailbox gHnsCoopMailbox = {
 };
 static EWRAM_DATA bool8 sCoopLinkStarted = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
-static EWRAM_DATA u16 sCoopInitialTrainerFlagCursor = 0;
+static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 
 static bool8 IsCoopSharedStoryFlag(u16 flagId)
 {
@@ -251,58 +251,38 @@ void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
     gHnsCoopMailbox.outgoingFlagWrite = write + 1;
 }
 
-static void Coop_QueueInitialSharedFlags(void)
+static void Coop_BeginInitialSharedFlagSync(void)
 {
-    u16 flagId;
-
-    for (flagId = FLAG_ADVENTURE_STARTED; flagId <= FLAG_UNLOCKED_GOLDENROD_UNDERGROUND_DOOR; flagId++)
-        if (FlagGet(flagId) && IsCoopSharedStoryFlag(flagId))
-            Coop_QueueSharedFlagChange(flagId, TRUE);
-
-    for (flagId = FLAG_DEFEATED_VIOLET_GYM; flagId <= FLAG_DEFEATED_VIRIDIAN_GYM; flagId++)
-        if (FlagGet(flagId))
-            Coop_QueueSharedFlagChange(flagId, TRUE);
-
-    for (flagId = FLAG_DEFEATED_HO_OH; flagId <= FLAG_DEFEATED_RED; flagId++)
-        if (FlagGet(flagId))
-            Coop_QueueSharedFlagChange(flagId, TRUE);
-
-    for (flagId = FLAG_BADGE01_GET; flagId <= FLAG_BADGE16_GET; flagId++)
-        if (FlagGet(flagId))
-            Coop_QueueSharedFlagChange(flagId, TRUE);
-
-    if (FlagGet(FLAG_GOT_PASSWORD_FROM_ETO))
-        Coop_QueueSharedFlagChange(FLAG_GOT_PASSWORD_FROM_ETO, TRUE);
-    if (FlagGet(FLAG_GOT_PASSWORD_FROM_GRUNTF))
-        Coop_QueueSharedFlagChange(FLAG_GOT_PASSWORD_FROM_GRUNTF, TRUE);
-    if (FlagGet(FLAG_DEFEATED_SUDOWOODO))
-        Coop_QueueSharedFlagChange(FLAG_DEFEATED_SUDOWOODO, TRUE);
-
-    // Trainer defeat flags are synchronized incrementally so a completed
-    // save with many defeated trainers cannot overflow the 128-entry mailbox.
-    sCoopInitialTrainerFlagCursor = TRAINER_FLAGS_START;
+    // Scan every shared progression flag incrementally. The trainer and badge
+    // flag ranges together can exceed the mailbox queue capacity.
+    sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
 }
 
-static void Coop_QueueInitialTrainerFlags(void)
+static void Coop_QueueInitialSharedFlags(void)
 {
     u8 scanned = 0;
 
-    while (sCoopInitialTrainerFlagCursor <= TRAINER_FLAGS_END && scanned < 16)
+    // FLAG_BADGE16_GET is the highest shared progression flag in this build.
+    // Filter each ID through IsCoopSharedStoryFlag so private/system flags are
+    // never copied between saves.
+    while (sCoopInitialFlagCursor <= FLAG_BADGE16_GET && scanned < 16)
     {
-        u16 flagId = sCoopInitialTrainerFlagCursor++;
+        u16 flagId = sCoopInitialFlagCursor++;
         scanned++;
 
-        if (FlagGet(flagId))
+        if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
+            continue;
+
+        u32 write = gHnsCoopMailbox.outgoingFlagWrite;
+        u32 read = gHnsCoopMailbox.outgoingFlagRead;
+        if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
         {
-            u32 write = gHnsCoopMailbox.outgoingFlagWrite;
-            u32 read = gHnsCoopMailbox.outgoingFlagRead;
-            if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
-            {
-                sCoopInitialTrainerFlagCursor--;
-                return;
-            }
-            Coop_QueueSharedFlagChange(flagId, TRUE);
+            // Retry this exact flag after the Android relay drains the queue.
+            sCoopInitialFlagCursor--;
+            return;
         }
+
+        Coop_QueueSharedFlagChange(flagId, TRUE);
     }
 }
 
@@ -346,7 +326,7 @@ static bool32 UpdateCoopLink(void)
             gLocalLinkPlayerId = GetMultiplayerId();
             SaveLinkPlayers(gFieldLinkPlayerCount);
             gHnsCoopMailbox.gameReady = TRUE;
-            Coop_QueueInitialSharedFlags();
+            Coop_BeginInitialSharedFlagSync();
             CB2_ReturnToFieldFromMultiplayer();
             return TRUE;
         }
@@ -2954,7 +2934,7 @@ static void CB1_OverworldLink(void)
         return;
 
     Coop_ProcessIncomingFlags();
-    Coop_QueueInitialTrainerFlags();
+    Coop_QueueInitialSharedFlags();
 
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
