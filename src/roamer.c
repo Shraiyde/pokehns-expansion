@@ -231,17 +231,6 @@ void DeactivateAllRoamers(void)
         SetRoamerInactive(i);
 }
 
-static void DeactivateRoamersByLocationTable(u8 locationTableId)
-{
-    u32 i;
-
-    for (i = 0; i < ROAMER_COUNT; i++)
-    {
-        if (ROAMER(i)->active && ROAMER(i)->locationTableId == locationTableId)
-            SetRoamerInactive(i);
-    }
-}
-
 static void ClearRoamerLocationHistory(u32 roamerIndex)
 {
     u32 i;
