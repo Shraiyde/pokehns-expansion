@@ -187,7 +187,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 7
+#define HNS_COOP_MAILBOX_VERSION 8
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
 #define HNS_COOP_VAR_QUEUE_SIZE 128
 
@@ -217,6 +217,15 @@ struct HnsCoopMailbox
     volatile u32 remoteMapReady;
     volatile u32 localSioActive;
     volatile u32 remoteSioActive;
+    volatile u32 hostRole;
+    volatile u32 localConfigRandomizer;
+    volatile u32 localConfigNuzlocke;
+    volatile u32 localRandomizerSeed;
+    volatile u32 localConfigReady;
+    volatile u32 remoteConfigRandomizer;
+    volatile u32 remoteConfigNuzlocke;
+    volatile u32 remoteRandomizerSeed;
+    volatile u32 remoteConfigReady;
 };
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
@@ -233,6 +242,7 @@ static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
 static EWRAM_DATA u32 sCoopLastIncomingFlagWrite = 0;
 static EWRAM_DATA u32 sCoopLastIncomingVarWrite = 0;
+static EWRAM_DATA u32 sCoopLastRemoteConfigReady = 0;
 
 static const u16 sCoopSharedStoryVars[] =
 {
@@ -610,6 +620,115 @@ static void Coop_UpdateStorySyncReadiness(void)
     }
 }
 
+static u32 Coop_PackRandomizerSettings(void)
+{
+    struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
+    return (cs->tx_Random_Chaos << 0)
+        | (cs->tx_Random_WildPokemon << 1)
+        | (cs->tx_Random_Similar << 2)
+        | (cs->tx_Random_MapBased << 3)
+        | (cs->tx_Random_IncludeLegendaries << 4)
+        | (cs->tx_Random_Type << 5)
+        | (cs->tx_Random_TypeEffectiveness << 6)
+        | (cs->tx_Random_Abilities << 7)
+        | (cs->tx_Random_Moves << 8)
+        | (cs->tx_Random_Trainer << 9)
+        | (cs->tx_Random_Evolutions << 10)
+        | (cs->tx_Random_EvolutionMethods << 11)
+        | (cs->tx_Random_Items << 12)
+        | (cs->tx_Random_Static << 13)
+        | (cs->tx_Random_Starter << 14)
+        | (cs->tx_Random_GenScope << 15);
+}
+
+static u32 Coop_PackNuzlockeSettings(void)
+{
+    struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
+    return (cs->tx_Challenges_Nuzlocke << 0)
+        | (cs->tx_Challenges_NuzlockeHardcore << 1)
+        | (cs->tx_Nuzlocke_SpeciesClause << 2)
+        | (cs->tx_Nuzlocke_ShinyClause << 3)
+        | (cs->tx_Nuzlocke_Nicknaming << 4)
+        | (cs->tx_Nuzlocke_Deletion << 5)
+        | (cs->tx_Nuzlocke_EasyMode << 6)
+        | (cs->tx_Nuzlocke_RareCandy << 7)
+        | (FlagGet(FLAG_START_NUZLOCKE) << 8)
+        | (FlagGet(FLAG_END_NUZLOCKE) << 9);
+}
+
+static void Coop_ApplySharedSettings(void)
+{
+    struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
+    u32 sequence = gHnsCoopMailbox.remoteConfigReady;
+    u32 randomizer;
+    u32 nuzlocke;
+
+    if (!sequence || sequence == sCoopLastRemoteConfigReady)
+        return;
+
+    randomizer = gHnsCoopMailbox.remoteConfigRandomizer;
+    nuzlocke = gHnsCoopMailbox.remoteConfigNuzlocke;
+
+    cs->tx_Random_Chaos = (randomizer >> 0) & 1;
+    cs->tx_Random_WildPokemon = (randomizer >> 1) & 1;
+    cs->tx_Random_Similar = (randomizer >> 2) & 1;
+    cs->tx_Random_MapBased = (randomizer >> 3) & 1;
+    cs->tx_Random_IncludeLegendaries = (randomizer >> 4) & 1;
+    cs->tx_Random_Type = (randomizer >> 5) & 1;
+    cs->tx_Random_TypeEffectiveness = (randomizer >> 6) & 1;
+    cs->tx_Random_Abilities = (randomizer >> 7) & 1;
+    cs->tx_Random_Moves = (randomizer >> 8) & 1;
+    cs->tx_Random_Trainer = (randomizer >> 9) & 1;
+    cs->tx_Random_Evolutions = (randomizer >> 10) & 1;
+    cs->tx_Random_EvolutionMethods = (randomizer >> 11) & 1;
+    cs->tx_Random_Items = (randomizer >> 12) & 1;
+    cs->tx_Random_Static = (randomizer >> 13) & 1;
+    cs->tx_Random_Starter = (randomizer >> 14) & 1;
+    cs->tx_Random_GenScope = (randomizer >> 15) & 1;
+
+    cs->tx_Challenges_Nuzlocke = (nuzlocke >> 0) & 1;
+    cs->tx_Challenges_NuzlockeHardcore = (nuzlocke >> 1) & 1;
+    cs->tx_Nuzlocke_SpeciesClause = (nuzlocke >> 2) & 1;
+    cs->tx_Nuzlocke_ShinyClause = (nuzlocke >> 3) & 1;
+    cs->tx_Nuzlocke_Nicknaming = (nuzlocke >> 4) & 1;
+    cs->tx_Nuzlocke_Deletion = (nuzlocke >> 5) & 1;
+    cs->tx_Nuzlocke_EasyMode = (nuzlocke >> 6) & 1;
+    cs->tx_Nuzlocke_RareCandy = (nuzlocke >> 7) & 1;
+
+    if ((nuzlocke >> 8) & 1)
+        FlagSet(FLAG_START_NUZLOCKE);
+    else
+        FlagClear(FLAG_START_NUZLOCKE);
+    if ((nuzlocke >> 9) & 1)
+        FlagSet(FLAG_END_NUZLOCKE);
+    else
+        FlagClear(FLAG_END_NUZLOCKE);
+
+#if RANDOMIZER_AVAILABLE
+    Randomizer_SetCoopSeed(gHnsCoopMailbox.remoteRandomizerSeed, TRUE);
+#endif
+    sCoopLastRemoteConfigReady = sequence;
+}
+
+static void Coop_UpdateSharedSettings(void)
+{
+    if (gHnsCoopMailbox.hostRole)
+    {
+        gHnsCoopMailbox.localConfigRandomizer = Coop_PackRandomizerSettings();
+        gHnsCoopMailbox.localConfigNuzlocke = Coop_PackNuzlockeSettings();
+#if RANDOMIZER_AVAILABLE
+        gHnsCoopMailbox.localRandomizerSeed = GetRandomizerSeed();
+#else
+        gHnsCoopMailbox.localRandomizerSeed = 0;
+#endif
+        gHnsCoopMailbox.localConfigReady = 1;
+    }
+    else
+    {
+        Coop_ApplySharedSettings();
+    }
+}
+
 static bool32 UpdateCoopLink(void)
 {
     if (gHnsCoopMailbox.magic != HNS_COOP_MAILBOX_MAGIC
@@ -623,6 +742,9 @@ static bool32 UpdateCoopLink(void)
         gHnsCoopMailbox.size = sizeof(struct HnsCoopMailbox);
         gHnsCoopMailbox.transportConnected = 0;
         gHnsCoopMailbox.gameReady = 0;
+        gHnsCoopMailbox.localConfigReady = 0;
+        gHnsCoopMailbox.remoteConfigReady = 0;
+        sCoopLastRemoteConfigReady = 0;
         sCoopLinkStarted = FALSE;
         Coop_ResetStorySyncQueues();
         // Publish the magic last so the Android bridge never sees a partial header.
@@ -2213,6 +2335,7 @@ void Coop_SetSioActive(bool8 active) { (void)active; }
 bool8 Coop_ArePlayersOnSameMap(void)
 {
     return IsCoopLinkActive()
+        && (gHnsCoopMailbox.hostRole || gHnsCoopMailbox.remoteConfigReady != 0)
         && gHnsCoopMailbox.remoteMapReady
         && gHnsCoopMailbox.remoteSioActive
         && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
@@ -3318,6 +3441,7 @@ static void CreateLinkPlayerSprites(void)
 
 static void CB1_OverworldLink(void)
 {
+    Coop_UpdateSharedSettings();
     if (UpdateCoopLink())
         return;
 
