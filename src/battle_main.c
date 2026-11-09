@@ -2189,8 +2189,24 @@ u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer 
 static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum, bool8 firstTrainer)
 {
     u8 retVal;
+    rng_value_t savedRng;
+    rng_value_t savedRng2;
+    bool32 isCoop = (gBattleTypeFlags & BATTLE_TYPE_COOP) != 0;
+
     if (trainerNum == TRAINER_SECRET_BASE)
         return 0;
+
+    // Both consoles must construct byte-for-byte equivalent NPC parties.
+    // Trainer party pools and a few trainer-mon options consume RNG, while
+    // the two overworld clients have independent random streams.
+    if (isCoop)
+    {
+        savedRng = gRngValue;
+        savedRng2 = gRng2Value;
+        SeedRng(0x434F4F50 ^ ((u32)trainerNum * 0x45D9F3B));
+        SeedRng2(0x504F4F43 ^ ((u32)trainerNum * 0x119DE1F3));
+    }
+
     if (GetTrainerStructFromId(trainerNum)->overrideTrainer)
     {
         struct Trainer tempTrainer;
@@ -2208,6 +2224,12 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum, bool8 fir
     else
     {
         retVal = CreateNPCTrainerPartyFromTrainer(party, GetTrainerStructFromId(trainerNum), firstTrainer, gBattleTypeFlags);
+    }
+
+    if (isCoop)
+    {
+        gRngValue = savedRng;
+        gRng2Value = savedRng2;
     }
     return retVal;
 }
