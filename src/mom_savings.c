@@ -565,6 +565,13 @@ bool8 Mom_CheckForGiftPurchase(u32 newBalance, u32 oldBalance, bool8 isAutomatic
     return FALSE;
 }
 bool8 Mom_TryTriggerGiftCall(void) { return FALSE; }
+void Special_MomEnableSaving(void) {}
+void Special_MomDisableSaving(void) {}
+void Special_MomGetBalance(void) {}
+void Special_MomDeposit(void) {}
+void Special_MomWithdraw(void) {}
+void Special_MomIsSavingEnabled(void) {}
+void Special_MomEnsureInitialized(void) {}
 void Special_MomOpenDepositInput(void) {}
 void Special_MomOpenWithdrawInput(void) {}
 
