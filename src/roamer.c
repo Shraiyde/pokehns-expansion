@@ -223,6 +223,19 @@ static void TryAttractRoamer(u32 roamerIndex)
         sRoamerLocation[roamerIndex][MAP_NUM] = playerMapNum;
 }
 
+#if IS_HNS
+static void DeactivateRoamersByLocationTable(u8 locationTableId)
+{
+    u32 i;
+
+    for (i = 0; i < ROAMER_COUNT; i++)
+    {
+        if (ROAMER(i)->active && ROAMER(i)->locationTableId == locationTableId)
+            SetRoamerInactive(i);
+    }
+}
+#endif
+
 void DeactivateAllRoamers(void)
 {
     u32 i;
