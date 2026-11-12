@@ -3198,7 +3198,10 @@ static bool32 ReturnToFieldLink(u8 *state)
         (*state)++;
         break;
     case 2:
-        CreateLinkPlayerSprites();
+        // The first return from the multiplayer handshake has no link-player
+        // object events yet. Create both players before restoring ordinary map
+        // objects so the remote player is visible immediately on initial spawn.
+        SpawnLinkPlayers();
         InitObjectEventsReturnToField();
         SetCameraToTrackGuestPlayer_2();
         (*state)++;
