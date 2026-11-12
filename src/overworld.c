@@ -146,7 +146,6 @@ static void SetCameraToTrackPlayer(void);
 static void InitObjectEventsReturnToField(void);
 static void InitViewGraphics(void);
 static void SetCameraToTrackGuestPlayer_2(void);
-static void CreateLinkPlayerSprites(void);
 static void ClearAllPlayerKeys(void);
 static void ResetAllPlayerLinkStates(void);
 static void UpdateHeldKeyCode(u16);
@@ -3198,11 +3197,10 @@ static bool32 ReturnToFieldLink(u8 *state)
         (*state)++;
         break;
     case 2:
-        // The first return from the multiplayer handshake has no link-player
-        // object events yet. Create both players before restoring ordinary map
-        // objects so the remote player is visible immediately on initial spawn.
-        SpawnLinkPlayers();
+        // Restore map objects first; this resets the object-event table.
+        // Spawn linked players afterward so their object events survive.
         InitObjectEventsReturnToField();
+        SpawnLinkPlayers();
         SetCameraToTrackGuestPlayer_2();
         (*state)++;
         break;
@@ -3458,14 +3456,6 @@ static void SpawnLinkPlayers(void)
 
     ClearAllPlayerKeys();
 }
-
-static void CreateLinkPlayerSprites(void)
-{
-    u16 i;
-    for (i = 0; i < gFieldLinkPlayerCount; i++)
-        CreateLinkPlayerSprite(i, gLinkPlayers[i].version);
-}
-
 
 static void CB1_OverworldLink(void)
 {
