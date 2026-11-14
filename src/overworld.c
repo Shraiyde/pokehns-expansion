@@ -2387,20 +2387,19 @@ void Coop_SetSioActive(bool8 active)
 
 static void Coop_PublishLocalPosition(void)
 {
-    struct LinkPlayerObjectEvent *self = &gLinkPlayerObjectEvents[gLocalLinkPlayerId];
+    // Publish from the local player avatar itself, not from the link-player
+    // slot: the slot only exists after a full SIO handshake, while the
+    // avatar object is always present in the overworld. Reading the slot
+    // published stale zeros whenever the link was down, parking every remote
+    // avatar at the map corner.
+    struct ObjectEvent *obj = &gObjectEvents[gPlayerAvatar.objectEventId];
 
-    if (!self->active)
+    if (!obj->active)
         return;
-    {
-        struct ObjectEvent *obj = &gObjectEvents[self->objEventId];
-
-        if (!obj->active)
-            return;
-        gHnsCoopMailbox.localX = (u32)(u16)obj->currentCoords.x;
-        gHnsCoopMailbox.localY = (u32)(u16)obj->currentCoords.y;
-        gHnsCoopMailbox.localGender = (u32)gSaveBlock2Ptr->playerGender;
-        gHnsCoopMailbox.localFacing = (u32)GetPlayerFacingDirection();
-    }
+    gHnsCoopMailbox.localX = (u32)(u16)obj->currentCoords.x;
+    gHnsCoopMailbox.localY = (u32)(u16)obj->currentCoords.y;
+    gHnsCoopMailbox.localGender = (u32)gSaveBlock2Ptr->playerGender;
+    gHnsCoopMailbox.localFacing = (u32)GetPlayerFacingDirection();
 }
 
 // Presence that does not depend on the GBA link handshake: as long as the
