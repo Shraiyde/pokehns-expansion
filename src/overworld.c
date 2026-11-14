@@ -135,6 +135,7 @@ static void InitObjectEventsLink(void);
 static void InitObjectEventsLocal(void);
 static void InitOverworldGraphicsRegisters(void);
 static u8 GetSpriteForLinkedPlayer(u8);
+static void DestroyLinkPlayerObject(u8);
 static u16 KeyInterCB_SendNothing(u32);
 static void ResetMirageTowerAndSaveBlockPtrs(void);
 static void ResetScreenForMapLoad(void);
@@ -187,7 +188,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 9
+#define HNS_COOP_MAILBOX_VERSION 10
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
 #define HNS_COOP_VAR_QUEUE_SIZE 128
 
@@ -230,6 +231,11 @@ struct HnsCoopMailbox
     volatile u32 localY;
     volatile u32 remoteX;
     volatile u32 remoteY;
+    volatile u32 localGender;
+    volatile u32 remoteGender;
+    volatile u32 localFacing;
+    volatile u32 remoteFacing;
+    volatile u32 peerLinkReady;
 };
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
@@ -2385,6 +2391,49 @@ static void Coop_PublishLocalPosition(void)
             return;
         gHnsCoopMailbox.localX = (u32)(u16)obj->currentCoords.x;
         gHnsCoopMailbox.localY = (u32)(u16)obj->currentCoords.y;
+        gHnsCoopMailbox.localGender = (u32)gSaveBlock2Ptr->playerGender;
+        gHnsCoopMailbox.localFacing = (u32)GetPlayerFacingDirection();
+    }
+}
+
+// Presence that does not depend on the GBA link handshake: as long as the
+// relay session is up and both games report the same map, each phone shows
+// the other's avatar at the peer's published coordinates. This is what
+// makes both players visible even when the SIO link itself never completes.
+bool8 Coop_IsPeerVisible(void)
+{
+    return gHnsCoopMailbox.magic == HNS_COOP_MAILBOX_MAGIC
+        && gHnsCoopMailbox.peerLinkReady
+        && gHnsCoopMailbox.remoteMapReady
+        && gHnsCoopMailbox.remoteMapId != 0
+        && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
+}
+
+#define COOP_PRESENCE_LINK_ID 1
+
+static void Coop_UpdateRemotePresence(void)
+{
+    struct LinkPlayerObjectEvent *remote = &gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID];
+
+    // The vanilla link flow owns these objects once the SIO link is up.
+    if (IsOverworldLinkActive())
+        return;
+
+    if (Coop_IsPeerVisible())
+    {
+        if (!remote->active)
+        {
+            struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+            SpawnLinkPlayerObjectEvent(COOP_PRESENCE_LINK_ID,
+                playerObj->currentCoords.x, playerObj->currentCoords.y,
+                (u8)gHnsCoopMailbox.remoteGender);
+            CreateLinkPlayerSprite(COOP_PRESENCE_LINK_ID, 0);
+        }
+    }
+    else if (remote->active)
+    {
+        DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
     }
 }
 
@@ -2396,10 +2445,10 @@ static void Coop_SnapRemoteLinkPlayers(void)
     // Key input still drives facing and step animation, but the remote
     // avatar's position snaps to the peer's published coordinates so both
     // screens agree on where everyone is standing.
-    if (!Coop_ArePlayersOnSameMap())
+    if (!Coop_ArePlayersOnSameMap() && !Coop_IsPeerVisible())
         return;
 
-    for (i = 0; i < gFieldLinkPlayerCount; i++)
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
     {
         struct LinkPlayerObjectEvent *linkPlayer;
         struct ObjectEvent *obj;
@@ -2414,6 +2463,7 @@ static void Coop_SnapRemoteLinkPlayers(void)
             continue;
         obj->previousCoords.x = obj->currentCoords.x = (s16)gHnsCoopMailbox.remoteX;
         obj->previousCoords.y = obj->currentCoords.y = (s16)gHnsCoopMailbox.remoteY;
+        linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
         ObjectEventUpdateElevation(obj, NULL);
     }
 }
@@ -2462,6 +2512,16 @@ void CB1_Overworld(void)
         if (UpdateCoopLink())
             return;
         DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
+#if IS_HNS
+        // Publish presence and show the peer avatar even when the GBA SIO
+        // link never completes. The vanilla link flow above owns this once
+        // CB1 switches to CB1_OverworldLink.
+        gHnsCoopMailbox.localMapId = (u32)gSaveBlock1Ptr->location.mapGroup
+                                  | ((u32)gSaveBlock1Ptr->location.mapNum << 16);
+        Coop_PublishLocalPosition();
+        Coop_UpdateRemotePresence();
+        Coop_SnapRemoteLinkPlayers();
+#endif
     }
 }
 
