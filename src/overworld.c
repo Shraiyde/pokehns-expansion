@@ -187,7 +187,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 8
+#define HNS_COOP_MAILBOX_VERSION 9
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
 #define HNS_COOP_VAR_QUEUE_SIZE 128
 
@@ -226,6 +226,10 @@ struct HnsCoopMailbox
     volatile u32 remoteConfigNuzlocke;
     volatile u32 remoteRandomizerSeed;
     volatile u32 remoteConfigReady;
+    volatile u32 localX;
+    volatile u32 localY;
+    volatile u32 remoteX;
+    volatile u32 remoteY;
 };
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
@@ -555,6 +559,8 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.remoteMapReady = 0;
     gHnsCoopMailbox.localSioActive = 0;
     gHnsCoopMailbox.remoteSioActive = 0;
+    gHnsCoopMailbox.remoteX = 0;
+    gHnsCoopMailbox.remoteY = 0;
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
     sCoopInitialBadgeFlagsStarted = FALSE;
@@ -2365,6 +2371,52 @@ void Coop_SetSioActive(bool8 active)
 {
     gHnsCoopMailbox.localSioActive = active;
 }
+
+static void Coop_PublishLocalPosition(void)
+{
+    struct LinkPlayerObjectEvent *self = &gLinkPlayerObjectEvents[gLocalLinkPlayerId];
+
+    if (!self->active)
+        return;
+    {
+        struct ObjectEvent *obj = &gObjectEvents[self->objEventId];
+
+        if (!obj->active)
+            return;
+        gHnsCoopMailbox.localX = (u32)(u16)obj->currentCoords.x;
+        gHnsCoopMailbox.localY = (u32)(u16)obj->currentCoords.y;
+    }
+}
+
+static void Coop_SnapRemoteLinkPlayers(void)
+{
+    u8 i;
+
+    // Each phone is authoritative for its own player's map coordinates.
+    // Key input still drives facing and step animation, but the remote
+    // avatar's position snaps to the peer's published coordinates so both
+    // screens agree on where everyone is standing.
+    if (!Coop_ArePlayersOnSameMap())
+        return;
+
+    for (i = 0; i < gFieldLinkPlayerCount; i++)
+    {
+        struct LinkPlayerObjectEvent *linkPlayer;
+        struct ObjectEvent *obj;
+
+        if (i == gLocalLinkPlayerId)
+            continue;
+        linkPlayer = &gLinkPlayerObjectEvents[i];
+        if (!linkPlayer->active)
+            continue;
+        obj = &gObjectEvents[linkPlayer->objEventId];
+        if (!obj->active)
+            continue;
+        obj->previousCoords.x = obj->currentCoords.x = (s16)gHnsCoopMailbox.remoteX;
+        obj->previousCoords.y = obj->currentCoords.y = (s16)gHnsCoopMailbox.remoteY;
+        ObjectEventUpdateElevation(obj, NULL);
+    }
+}
 #else
 bool8 Coop_ArePlayersOnSameMap(void) { return FALSE; }
 void Coop_SetSioActive(bool8 active) { (void)active; }
@@ -3474,12 +3526,16 @@ static void CB1_OverworldLink(void)
     Coop_QueueInitialSharedFlags();
     Coop_QueueInitialSharedVars();
     Coop_UpdateStorySyncReadiness();
+    Coop_PublishLocalPosition();
 #endif
 
     if (gWirelessCommType == 0 || !IsRfuRecvQueueEmpty() || !IsSendingKeysToLink())
     {
         u8 selfId = gLocalLinkPlayerId;
         UpdateAllLinkPlayers(gLinkPartnersHeldKeys, selfId);
+#if IS_HNS
+        Coop_SnapRemoteLinkPlayers();
+#endif
 
         // Note: Because guestId is between 0 and 4, while the smallest key code is
         // LINK_KEY_CODE_EMPTY, this is functionally equivalent to `sPlayerKeyInterceptCallback(0)`.
