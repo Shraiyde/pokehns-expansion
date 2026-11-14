@@ -2471,6 +2471,7 @@ static void Coop_SnapRemoteLinkPlayers(void)
     {
         struct LinkPlayerObjectEvent *linkPlayer;
         struct ObjectEvent *obj;
+        s16 dx, dy;
 
         if (i == selfId)
             continue;
@@ -2480,21 +2481,57 @@ static void Coop_SnapRemoteLinkPlayers(void)
         obj = &gObjectEvents[linkPlayer->objEventId];
         if (!obj->active)
             continue;
-        obj->previousCoords.x = obj->currentCoords.x = x;
-        obj->previousCoords.y = obj->currentCoords.y = y;
-        linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
-        // The link sprite renders from initialCoords, not currentCoords,
-        // so teleport those too or the avatar stays frozen at its spawn
-        // point (e.g. sitting in a doorway) while only facing updates.
-        // In link mode with a live key stream, steps are mid-flight most
-        // frames; only teleport then when no step is running so the
-        // vanilla glide is preserved.
-        if (!linkActive || obj->directionSequenceIndex == 0)
+        if (linkActive)
         {
+            obj->previousCoords.x = obj->currentCoords.x = x;
+            obj->previousCoords.y = obj->currentCoords.y = y;
+            linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+            // The link sprite renders from initialCoords, not currentCoords.
+            // Only teleport a standing avatar so in-flight vanilla steps keep
+            // their glide.
+            if (obj->directionSequenceIndex == 0)
+            {
+                SetSpritePosToMapCoords(x, y, &obj->initialCoords.x, &obj->initialCoords.y);
+                obj->initialCoords.x += 8;
+            }
+            ObjectEventUpdateElevation(obj, NULL);
+            continue;
+        }
+        // No link: walk the avatar with vanilla steps toward the peer's
+        // published position so movement animates instead of teleporting.
+        dx = x - obj->currentCoords.x;
+        dy = y - obj->currentCoords.y;
+        if (dx < 0)
+            dx = -dx;
+        if (dy < 0)
+            dy = -dy;
+        if (dx + dy > 2)
+        {
+            // Too far to walk (warp or resync): teleport cleanly.
+            obj->previousCoords.x = obj->currentCoords.x = x;
+            obj->previousCoords.y = obj->currentCoords.y = y;
             SetSpritePosToMapCoords(x, y, &obj->initialCoords.x, &obj->initialCoords.y);
             obj->initialCoords.x += 8;
-            if (!linkActive)
-                obj->directionSequenceIndex = 0;
+            linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+            obj->directionSequenceIndex = 0;
+        }
+        else if (dx == 0 && dy == 0)
+        {
+            linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+        }
+        else if (dx >= dy)
+        {
+            if (x > obj->currentCoords.x)
+                SetPlayerFacingDirection(i, FACING_RIGHT);
+            else
+                SetPlayerFacingDirection(i, FACING_LEFT);
+        }
+        else
+        {
+            if (y > obj->currentCoords.y)
+                SetPlayerFacingDirection(i, FACING_DOWN);
+            else
+                SetPlayerFacingDirection(i, FACING_UP);
         }
         ObjectEventUpdateElevation(obj, NULL);
     }
