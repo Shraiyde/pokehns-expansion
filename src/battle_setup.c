@@ -812,6 +812,12 @@ static void CB2_EndWildBattle(void)
         SetMainCallback2(CB2_ReturnToField);
         DowngradeBadPoison();
         gFieldCallback = FieldCB_ReturnToFieldNoScriptCheckMusic;
+        if (!IsPlayerDefeated(gBattleOutcome)
+            && CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE
+            && !InBattlePike()
+            && !InTrainerHillChallenge()
+            && !(gBattleTypeFlags & BATTLE_TYPE_FRONTIER))
+            HealPlayerParty();
     }
 }
 
@@ -831,6 +837,10 @@ static void CB2_EndScriptedWildBattle(void)
     {
         DowngradeBadPoison();
         SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE
+            && !InTrainerHillChallenge()
+            && !(gBattleTypeFlags & BATTLE_TYPE_FRONTIER))
+            HealPlayerParty();
     }
 }
 
@@ -1872,6 +1882,10 @@ static void CB2_EndTrainerBattle(void)
             RegisterTrainerInMatchCall();
             SetBattledTrainersFlags();
         }
+        if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE
+            && !InTrainerHillChallenge()
+            && !(gBattleTypeFlags & BATTLE_TYPE_FRONTIER))
+            HealPlayerParty();
     }
 }
 
@@ -1895,6 +1909,10 @@ static void CB2_EndRematchBattle(void)
         SetBattledTrainersFlags();
         HandleRematchVarsOnBattleEnd();
         DowngradeBadPoison();
+        if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE
+            && !InTrainerHillChallenge()
+            && !(gBattleTypeFlags & BATTLE_TYPE_FRONTIER))
+            HealPlayerParty();
     }
 }
 
