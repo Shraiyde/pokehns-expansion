@@ -394,6 +394,7 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
     s16 currX = gObjectEvents[gPlayerAvatar.objectEventId].currentCoords.x;
     s16 currY = gObjectEvents[gPlayerAvatar.objectEventId].currentCoords.y;
     u8 currBehavior = MapGridGetMetatileBehaviorAt(currX, currY);
+    s32 i;
 
     gSpecialVar_Facing = direction;
     switch (direction)
@@ -423,6 +424,15 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
     default:
         objectEventId = GetObjectEventIdByPosition(position->x, position->y, position->elevation);
         break;
+    }
+
+    // Link-partner avatars (co-op presence or a live link) have no map
+    // script: their template lookup would run garbage or crash. Treat them
+    // as non-interactable, matching GetInteractedLinkPlayerScript.
+    for (i = 0; i < 4; i++)
+    {
+        if (gLinkPlayerObjectEvents[i].active == TRUE && gLinkPlayerObjectEvents[i].objEventId == objectEventId)
+            return NULL;
     }
 
     if (objectEventId == OBJECT_EVENTS_COUNT || gObjectEvents[objectEventId].localId == LOCALID_PLAYER)

@@ -2448,10 +2448,15 @@ static void Coop_UpdateRemotePresence(void)
 static void Coop_SnapRemoteLinkPlayers(void)
 {
     u8 i;
+    s16 x, y;
+    bool8 linkActive;
     // Without the SIO link there is no link identity; the local player is
     // always slot 0. Using the stale gLocalLinkPlayerId from a dead link
     // session would skip the presence avatar forever.
-    u8 selfId = IsOverworldLinkActive() ? gLocalLinkPlayerId : 0;
+    u8 selfId;
+
+    linkActive = IsOverworldLinkActive();
+    selfId = linkActive ? gLocalLinkPlayerId : 0;
 
     // Each phone is authoritative for its own player's map coordinates.
     // Key input still drives facing and step animation, but the remote
@@ -2460,6 +2465,8 @@ static void Coop_SnapRemoteLinkPlayers(void)
     if (!Coop_ArePlayersOnSameMap() && !Coop_IsPeerVisible())
         return;
 
+    x = (s16)gHnsCoopMailbox.remoteX;
+    y = (s16)gHnsCoopMailbox.remoteY;
     for (i = 0; i < MAX_LINK_PLAYERS; i++)
     {
         struct LinkPlayerObjectEvent *linkPlayer;
@@ -2473,9 +2480,22 @@ static void Coop_SnapRemoteLinkPlayers(void)
         obj = &gObjectEvents[linkPlayer->objEventId];
         if (!obj->active)
             continue;
-        obj->previousCoords.x = obj->currentCoords.x = (s16)gHnsCoopMailbox.remoteX;
-        obj->previousCoords.y = obj->currentCoords.y = (s16)gHnsCoopMailbox.remoteY;
+        obj->previousCoords.x = obj->currentCoords.x = x;
+        obj->previousCoords.y = obj->currentCoords.y = y;
         linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+        // The link sprite renders from initialCoords, not currentCoords,
+        // so teleport those too or the avatar stays frozen at its spawn
+        // point (e.g. sitting in a doorway) while only facing updates.
+        // In link mode with a live key stream, steps are mid-flight most
+        // frames; only teleport then when no step is running so the
+        // vanilla glide is preserved.
+        if (!linkActive || obj->directionSequenceIndex == 0)
+        {
+            SetSpritePosToMapCoords(x, y, &obj->initialCoords.x, &obj->initialCoords.y);
+            obj->initialCoords.x += 8;
+            if (!linkActive)
+                obj->directionSequenceIndex = 0;
+        }
         ObjectEventUpdateElevation(obj, NULL);
     }
 }
