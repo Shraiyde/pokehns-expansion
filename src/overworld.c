@@ -188,7 +188,8 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 10
+#define HNS_COOP_MAILBOX_VERSION 11
+#define HNS_COOP_CONFIG_BLOB_SIZE 44
 
 // Note: Emerald reuses the direction and range variables during Link mode
 // as special gender and direction values. The types and placement
@@ -243,7 +244,11 @@ struct HnsCoopMailbox
     volatile u32 localFacing;
     volatile u32 remoteFacing;
     volatile u32 peerLinkReady;
+    volatile u8 localConfigBlob[HNS_COOP_CONFIG_BLOB_SIZE];
+    volatile u8 remoteConfigBlob[HNS_COOP_CONFIG_BLOB_SIZE];
 };
+
+STATIC_ASSERT((sizeof(struct ChallengeSettings) <= HNS_COOP_CONFIG_BLOB_SIZE - 4), CoopChallengeSettingsFitsBlob);
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
 // mailbox header at runtime instead of using a nonzero static initializer.
@@ -253,6 +258,7 @@ static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
+static EWRAM_DATA bool8 sCoopInitialGymFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialBadgeFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
@@ -432,9 +438,22 @@ static void Coop_QueueInitialSharedFlags(void)
         u32 write;
         u32 read;
 
-        if (!sCoopInitialBadgeFlagsStarted)
+        if (!sCoopInitialGymFlagsStarted)
         {
             if (sCoopInitialFlagCursor <= FLAG_DEFEATED_SUDOWOODO)
+                flagId = sCoopInitialFlagCursor++;
+            else
+            {
+                sCoopInitialGymFlagsStarted = TRUE;
+                sCoopInitialFlagCursor = FLAG_GOT_PASSWORD_FROM_ETO;
+                continue;
+            }
+        }
+        else if (!sCoopInitialBadgeFlagsStarted)
+        {
+            // Gym victories, boss defeats, and Rocket passwords live in
+            // their own block above the adventure flags; sync them here.
+            if (sCoopInitialFlagCursor <= FLAG_DEFEATED_RED)
                 flagId = sCoopInitialFlagCursor++;
             else
             {
@@ -576,6 +595,7 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.remoteY = 0;
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
     sCoopStorySyncReady = FALSE;
@@ -588,6 +608,7 @@ static void Coop_BeginInitialSharedFlagSync(void)
 {
     sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
     sCoopInitialVarCursor = 0;
+    sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
     sCoopStorySyncReady = FALSE;
@@ -639,86 +660,34 @@ static void Coop_UpdateStorySyncReadiness(void)
     }
 }
 
-static u32 Coop_PackRandomizerSettings(void)
-{
-    struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
-    return (cs->tx_Random_Chaos << 0)
-        | (cs->tx_Random_WildPokemon << 1)
-        | (cs->tx_Random_Similar << 2)
-        | (cs->tx_Random_MapBased << 3)
-        | (cs->tx_Random_IncludeLegendaries << 4)
-        | (cs->tx_Random_Type << 5)
-        | (cs->tx_Random_TypeEffectiveness << 6)
-        | (cs->tx_Random_Abilities << 7)
-        | (cs->tx_Random_Moves << 8)
-        | (cs->tx_Random_Trainer << 9)
-        | (cs->tx_Random_Evolutions << 10)
-        | (cs->tx_Random_EvolutionMethods << 11)
-        | (cs->tx_Random_Items << 12)
-        | (cs->tx_Random_Static << 13)
-        | (cs->tx_Random_Starter << 14)
-        | (cs->tx_Random_GenScope << 15);
-}
-
-static u32 Coop_PackNuzlockeSettings(void)
-{
-    struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
-    return (cs->tx_Challenges_Nuzlocke << 0)
-        | (cs->tx_Challenges_NuzlockeHardcore << 1)
-        | (cs->tx_Nuzlocke_SpeciesClause << 2)
-        | (cs->tx_Nuzlocke_ShinyClause << 3)
-        | (cs->tx_Nuzlocke_Nicknaming << 4)
-        | (cs->tx_Nuzlocke_Deletion << 5)
-        | (cs->tx_Nuzlocke_EasyMode << 6)
-        | (cs->tx_Nuzlocke_RareCandy << 7)
-        | (FlagGet(FLAG_START_NUZLOCKE) << 8)
-        | (FlagGet(FLAG_END_NUZLOCKE) << 9);
-}
-
+// The host publishes the ENTIRE ChallengeSettings struct (minus the local
+// player's per-save Nuzlocke encounter table) so every challenge, mode, and
+// randomizer option matches on both consoles. Partial bit-packing drifted
+// out of sync with new options; a versioned whole-struct snapshot cannot.
 static void Coop_ApplySharedSettings(void)
 {
     struct ChallengeSettings *cs = &gSaveBlock3Ptr->challengeSettings;
     u32 sequence = gHnsCoopMailbox.remoteConfigReady;
-    u32 randomizer;
-    u32 nuzlocke;
+    u8 savedEncounters[16];
+    u8 nuzlockeFlags;
+    u32 i;
 
-    if (!sequence)
+    if (!sequence || sequence == sCoopLastRemoteConfigReady)
         return;
 
-    randomizer = gHnsCoopMailbox.remoteConfigRandomizer;
-    nuzlocke = gHnsCoopMailbox.remoteConfigNuzlocke;
+    for (i = 0; i < ARRAY_COUNT(savedEncounters); i++)
+        savedEncounters[i] = cs->nuzlockeEncounterFlags[i];
+    for (i = 0; i < sizeof(struct ChallengeSettings); i++)
+        ((u8 *)cs)[i] = gHnsCoopMailbox.remoteConfigBlob[i];
+    for (i = 0; i < ARRAY_COUNT(savedEncounters); i++)
+        cs->nuzlockeEncounterFlags[i] = savedEncounters[i];
 
-    cs->tx_Random_Chaos = (randomizer >> 0) & 1;
-    cs->tx_Random_WildPokemon = (randomizer >> 1) & 1;
-    cs->tx_Random_Similar = (randomizer >> 2) & 1;
-    cs->tx_Random_MapBased = (randomizer >> 3) & 1;
-    cs->tx_Random_IncludeLegendaries = (randomizer >> 4) & 1;
-    cs->tx_Random_Type = (randomizer >> 5) & 1;
-    cs->tx_Random_TypeEffectiveness = (randomizer >> 6) & 1;
-    cs->tx_Random_Abilities = (randomizer >> 7) & 1;
-    cs->tx_Random_Moves = (randomizer >> 8) & 1;
-    cs->tx_Random_Trainer = (randomizer >> 9) & 1;
-    cs->tx_Random_Evolutions = (randomizer >> 10) & 1;
-    cs->tx_Random_EvolutionMethods = (randomizer >> 11) & 1;
-    cs->tx_Random_Items = (randomizer >> 12) & 1;
-    cs->tx_Random_Static = (randomizer >> 13) & 1;
-    cs->tx_Random_Starter = (randomizer >> 14) & 1;
-    cs->tx_Random_GenScope = (randomizer >> 15) & 1;
-
-    cs->tx_Challenges_Nuzlocke = (nuzlocke >> 0) & 1;
-    cs->tx_Challenges_NuzlockeHardcore = (nuzlocke >> 1) & 1;
-    cs->tx_Nuzlocke_SpeciesClause = (nuzlocke >> 2) & 1;
-    cs->tx_Nuzlocke_ShinyClause = (nuzlocke >> 3) & 1;
-    cs->tx_Nuzlocke_Nicknaming = (nuzlocke >> 4) & 1;
-    cs->tx_Nuzlocke_Deletion = (nuzlocke >> 5) & 1;
-    cs->tx_Nuzlocke_EasyMode = (nuzlocke >> 6) & 1;
-    cs->tx_Nuzlocke_RareCandy = (nuzlocke >> 7) & 1;
-
-    if ((nuzlocke >> 8) & 1)
+    nuzlockeFlags = gHnsCoopMailbox.remoteConfigBlob[HNS_COOP_CONFIG_BLOB_SIZE - 4];
+    if (nuzlockeFlags & 1)
         FlagSet(FLAG_START_NUZLOCKE);
     else
         FlagClear(FLAG_START_NUZLOCKE);
-    if ((nuzlocke >> 9) & 1)
+    if (nuzlockeFlags & 2)
         FlagSet(FLAG_END_NUZLOCKE);
     else
         FlagClear(FLAG_END_NUZLOCKE);
@@ -733,9 +702,11 @@ static void Coop_UpdateSharedSettings(void)
 {
     if (gHnsCoopMailbox.hostRole)
     {
-        u32 randomizer = Coop_PackRandomizerSettings();
-        u32 nuzlocke = Coop_PackNuzlockeSettings();
+        // Publish the whole ruleset as one blob so any challenge, mode, or
+        // randomizer option added in the future syncs automatically.
+        u8 packed[HNS_COOP_CONFIG_BLOB_SIZE];
         u32 seed;
+        u32 i;
 #if RANDOMIZER_AVAILABLE
         // Force both consoles, including CHAOS mode, through the same
         // deterministic seed while this host owns the co-op session.
@@ -745,13 +716,33 @@ static void Coop_UpdateSharedSettings(void)
 #else
         seed = 0;
 #endif
-        if (!gHnsCoopMailbox.localConfigReady
-            || gHnsCoopMailbox.localConfigRandomizer != randomizer
-            || gHnsCoopMailbox.localConfigNuzlocke != nuzlocke
-            || gHnsCoopMailbox.localRandomizerSeed != seed)
+        for (i = 0; i < HNS_COOP_CONFIG_BLOB_SIZE; i++)
+            packed[i] = 0;
+        for (i = 0; i < sizeof(struct ChallengeSettings); i++)
+            packed[i] = ((const u8 *)&gSaveBlock3Ptr->challengeSettings)[i];
+        if (FlagGet(FLAG_START_NUZLOCKE))
+            packed[HNS_COOP_CONFIG_BLOB_SIZE - 4] |= 1;
+        if (FlagGet(FLAG_END_NUZLOCKE))
+            packed[HNS_COOP_CONFIG_BLOB_SIZE - 4] |= 2;
+
+        bool8 changed = !gHnsCoopMailbox.localConfigReady
+            || gHnsCoopMailbox.localRandomizerSeed != seed;
+
+        if (!changed)
         {
-            gHnsCoopMailbox.localConfigRandomizer = randomizer;
-            gHnsCoopMailbox.localConfigNuzlocke = nuzlocke;
+            for (i = 0; i < HNS_COOP_CONFIG_BLOB_SIZE; i++)
+            {
+                if (gHnsCoopMailbox.localConfigBlob[i] != packed[i])
+                {
+                    changed = TRUE;
+                    break;
+                }
+            }
+        }
+        if (changed)
+        {
+            for (i = 0; i < HNS_COOP_CONFIG_BLOB_SIZE; i++)
+                gHnsCoopMailbox.localConfigBlob[i] = packed[i];
             gHnsCoopMailbox.localRandomizerSeed = seed;
             gHnsCoopMailbox.localConfigReady++;
             if (!gHnsCoopMailbox.localConfigReady)
@@ -2420,10 +2411,21 @@ bool8 Coop_IsPeerVisible(void)
 static void Coop_UpdateRemotePresence(void)
 {
     struct LinkPlayerObjectEvent *remote = &gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID];
+    u8 i;
 
     // The vanilla link flow owns these objects once the SIO link is up.
     if (IsOverworldLinkActive())
         return;
+
+    // Clear stale objects from dead link sessions; the presence avatar
+    // below is the only link object allowed while the SIO link is down.
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        if (i == COOP_PRESENCE_LINK_ID)
+            continue;
+        if (gLinkPlayerObjectEvents[i].active)
+            DestroyLinkPlayerObject(i);
+    }
 
     if (Coop_IsPeerVisible())
     {
@@ -2446,6 +2448,10 @@ static void Coop_UpdateRemotePresence(void)
 static void Coop_SnapRemoteLinkPlayers(void)
 {
     u8 i;
+    // Without the SIO link there is no link identity; the local player is
+    // always slot 0. Using the stale gLocalLinkPlayerId from a dead link
+    // session would skip the presence avatar forever.
+    u8 selfId = IsOverworldLinkActive() ? gLocalLinkPlayerId : 0;
 
     // Each phone is authoritative for its own player's map coordinates.
     // Key input still drives facing and step animation, but the remote
@@ -2459,7 +2465,7 @@ static void Coop_SnapRemoteLinkPlayers(void)
         struct LinkPlayerObjectEvent *linkPlayer;
         struct ObjectEvent *obj;
 
-        if (i == gLocalLinkPlayerId)
+        if (i == selfId)
             continue;
         linkPlayer = &gLinkPlayerObjectEvents[i];
         if (!linkPlayer->active)
@@ -2475,6 +2481,7 @@ static void Coop_SnapRemoteLinkPlayers(void)
 }
 #else
 bool8 Coop_ArePlayersOnSameMap(void) { return FALSE; }
+bool8 Coop_IsPeerVisible(void) { return FALSE; }
 void Coop_SetSioActive(bool8 active) { (void)active; }
 #endif
 
