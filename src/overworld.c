@@ -189,6 +189,13 @@ static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
 #define HNS_COOP_MAILBOX_VERSION 10
+
+// Note: Emerald reuses the direction and range variables during Link mode
+// as special gender and direction values. The types and placement
+// conflict with the usual Event Object struct, thus the definitions.
+#define linkGender(obj) obj->singleMovementActive
+// not even one can reference *byte* aligned bitfield members...
+#define linkDirection(obj) ((u8 *)obj)[offsetof(typeof(*obj), range)] // -> rangeX
 #define HNS_COOP_FLAG_QUEUE_SIZE 128
 #define HNS_COOP_VAR_QUEUE_SIZE 128
 
@@ -4279,13 +4286,6 @@ static void ZeroObjectEvent(struct ObjectEvent *objEvent)
 {
     memset(objEvent, 0, sizeof(struct ObjectEvent));
 }
-
-// Note: Emerald reuses the direction and range variables during Link mode
-// as special gender and direction values. The types and placement
-// conflict with the usual Event Object struct, thus the definitions.
-#define linkGender(obj) obj->singleMovementActive
-// not even one can reference *byte* aligned bitfield members...
-#define linkDirection(obj) ((u8 *)obj)[offsetof(typeof(*obj), range)] // -> rangeX
 
 static void SpawnLinkPlayerObjectEvent(u8 linkPlayerId, s16 x, s16 y, u8 gender)
 {
