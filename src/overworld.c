@@ -2383,14 +2383,37 @@ static void Coop_PublishLocalPosition(void)
     // avatar object is always present in the overworld. Reading the slot
     // published stale zeros whenever the link was down, parking every remote
     // avatar at the map corner.
-    struct ObjectEvent *obj = &gObjectEvents[gPlayerAvatar.objectEventId];
+    //
+    // But in link mode there is no player avatar object: the link loader
+    // never creates one, and ResetObjectEvents zeroes gPlayerAvatar, so
+    // objectEventId is 0 (an NPC slot, or inactive). Publishing from it
+    // sends an NPC's coords or nothing, and the peer snaps your avatar to
+    // the map corner, so you are invisible. While the link is up, publish
+    // from the local link player object instead.
+    struct ObjectEvent *obj;
+    u8 facing;
 
-    if (!obj->active)
-        return;
+    if (IsOverworldLinkActive())
+    {
+        struct LinkPlayerObjectEvent *linkPlayer = &gLinkPlayerObjectEvents[gLocalLinkPlayerId];
+        if (!linkPlayer->active)
+            return;
+        obj = &gObjectEvents[linkPlayer->objEventId];
+        if (!obj->active)
+            return;
+        facing = linkDirection(obj);
+    }
+    else
+    {
+        obj = &gObjectEvents[gPlayerAvatar.objectEventId];
+        if (!obj->active)
+            return;
+        facing = GetPlayerFacingDirection();
+    }
     gHnsCoopMailbox.localX = (u32)(u16)obj->currentCoords.x;
     gHnsCoopMailbox.localY = (u32)(u16)obj->currentCoords.y;
     gHnsCoopMailbox.localGender = (u32)gSaveBlock2Ptr->playerGender;
-    gHnsCoopMailbox.localFacing = (u32)GetPlayerFacingDirection();
+    gHnsCoopMailbox.localFacing = (u32)facing;
 }
 
 // Presence that does not depend on the GBA link handshake: as long as the
@@ -2499,13 +2522,17 @@ static void Coop_SnapRemoteLinkPlayers(void)
         }
         // No link: walk the avatar with vanilla steps toward the peer's
         // published position so movement animates instead of teleporting.
+        // Walk only when exactly one tile behind: at the same speed as the
+        // peer the avatar can never close a gap while the peer keeps moving,
+        // so a 2-tile gap means relay lag or a direction change, and the
+        // avatar snaps back instead of trailing further.
         dx = x - obj->currentCoords.x;
         dy = y - obj->currentCoords.y;
         if (dx < 0)
             dx = -dx;
         if (dy < 0)
             dy = -dy;
-        if (dx + dy > 2)
+        if (dx + dy >= 2)
         {
             // Too far to walk (warp or resync): teleport cleanly.
             obj->previousCoords.x = obj->currentCoords.x = x;
@@ -4353,8 +4380,17 @@ static void ZeroObjectEvent(struct ObjectEvent *objEvent)
 static void SpawnLinkPlayerObjectEvent(u8 linkPlayerId, s16 x, s16 y, u8 gender)
 {
     u8 objEventId = GetFirstInactiveObjectEventId();
-    struct LinkPlayerObjectEvent *linkPlayerObjEvent = &gLinkPlayerObjectEvents[linkPlayerId];
-    struct ObjectEvent *objEvent = &gObjectEvents[objEventId];
+    struct LinkPlayerObjectEvent *linkPlayerObjEvent;
+    struct ObjectEvent *objEvent;
+
+    // GetFirstInactiveObjectEventId returns OBJECT_EVENTS_COUNT when every
+    // slot is taken. Spawning then would write past gObjectEvents and
+    // corrupt the table. Bail out instead; the presence update retries next
+    // frame once a slot frees up.
+    if (objEventId >= OBJECT_EVENTS_COUNT)
+        return;
+    linkPlayerObjEvent = &gLinkPlayerObjectEvents[linkPlayerId];
+    objEvent = &gObjectEvents[objEventId];
 
     ZeroLinkPlayerObjectEvent(linkPlayerObjEvent);
     ZeroObjectEvent(objEvent);
