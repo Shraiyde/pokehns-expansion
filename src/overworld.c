@@ -2477,6 +2477,8 @@ static void Coop_SnapRemoteLinkPlayers(void)
     // always slot 0. Using the stale gLocalLinkPlayerId from a dead link
     // session would skip the presence avatar forever.
     u8 selfId;
+    // Whether the peer is actually on this map right now.
+    bool8 sameMap;
 
     linkActive = IsOverworldLinkActive();
     selfId = linkActive ? gLocalLinkPlayerId : 0;
@@ -2485,8 +2487,11 @@ static void Coop_SnapRemoteLinkPlayers(void)
     // Key input still drives facing and step animation, but the remote
     // avatar's position snaps to the peer's published coordinates so both
     // screens agree on where everyone is standing.
-    if (!Coop_ArePlayersOnSameMap() && !Coop_IsPeerVisible())
-        return;
+    // When the peer is on a different map, their link object still exists
+    // here (SpawnLinkPlayers puts it next to us on every warp), so hide it
+    // instead of leaving a ghost standing on the wrong map. It comes back
+    // automatically when the maps match again.
+    sameMap = Coop_ArePlayersOnSameMap() || Coop_IsPeerVisible();
 
     x = (s16)gHnsCoopMailbox.remoteX;
     y = (s16)gHnsCoopMailbox.remoteY;
@@ -2506,6 +2511,18 @@ static void Coop_SnapRemoteLinkPlayers(void)
             continue;
         if (linkActive)
         {
+            // Different map: hide the peer's avatar instead of leaving it
+            // standing where it spawned on this map. The object keeps
+            // existing (so the link protocol is untouched) and comes back
+            // the moment the maps match again.
+            if (!sameMap)
+            {
+                if (obj->spriteId != MAX_SPRITES)
+                    gSprites[obj->spriteId].invisible = TRUE;
+                continue;
+            }
+            if (obj->spriteId != MAX_SPRITES)
+                gSprites[obj->spriteId].invisible = FALSE;
             obj->previousCoords.x = obj->currentCoords.x = x;
             obj->previousCoords.y = obj->currentCoords.y = y;
             linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
