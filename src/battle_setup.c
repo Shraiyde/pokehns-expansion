@@ -574,6 +574,10 @@ static void ConfigureCoopTrainerBattle(void)
 {
     if (AreCoopPlayersOnSameMap())
     {
+        // Snapshot the full local party before the multi-battle merge overwrites
+        // slots with the partner's team. SaveCoopLocalPartyAfterBattle / peer-drop
+        // abort both restore from this via LoadPlayerParty.
+        SavePlayerParty();
         // Both players are present in this map. Use the existing link
         // multi-battle controller: one active Pokémon per human player
         // against the NPC's normal party. Wild battle setup never calls this.
@@ -1840,8 +1844,33 @@ static void SaveCoopLocalPartyAfterBattle(void)
     LoadPlayerParty();
 }
 
+static void ReturnToFieldAfterCoopPeerDropAbort(void)
+{
+    // Restore the pre-battle party instead of persisting mid-battle damage/EXP/items.
+    LoadPlayerParty();
+    Coop_ClearPeerDropAbortBattle();
+
+    // Do not continue the trainer's post-win script or leave approach state armed.
+    gNoOfApproachingTrainers = 0;
+    gApproachingTrainerId = 0;
+    gTrainerApproachedPlayer = FALSE;
+    sNoOfPossibleTrainerRetScripts = 0;
+    sShouldCheckTrainerBScript = FALSE;
+    ScriptContext_Init();
+
+    SetMainCallback2(CB2_ReturnToField);
+    gFieldCallback = FieldCB_ReturnToFieldNoScriptCheckMusic;
+}
+
 static void CB2_EndTrainerBattle(void)
 {
+    if (Coop_DidPeerDropAbortBattle())
+    {
+        gIsDebugBattle = FALSE;
+        ReturnToFieldAfterCoopPeerDropAbort();
+        return;
+    }
+
     SaveCoopLocalPartyAfterBattle();
     HandleBattleVariantEndParty();
 
@@ -1915,6 +1944,12 @@ static void CB2_EndTrainerBattle(void)
 
 static void CB2_EndRematchBattle(void)
 {
+    if (Coop_DidPeerDropAbortBattle())
+    {
+        ReturnToFieldAfterCoopPeerDropAbort();
+        return;
+    }
+
     SaveCoopLocalPartyAfterBattle();
 
     if (TRAINER_BATTLE_PARAM.opponentA == TRAINER_SECRET_BASE)

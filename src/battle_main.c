@@ -3216,15 +3216,15 @@ static void BattleMainCB1(void)
     Coop_SetSioActive((gBattleTypeFlags & BATTLE_TYPE_COOP) != 0);
 
 #if IS_HNS
-    // Peer dropped the Android transport mid co-op battle: force a clean
-    // forfeit so both phones leave instead of hanging on link waits.
+    // Peer dropped the Android transport mid co-op battle: abort for both
+    // phones without whiteout / forfeit penalties (see Coop_DidPeerDropAbortBattle).
     if ((gBattleTypeFlags & BATTLE_TYPE_COOP)
         && !sCoopBattleLinkLossHandled
         && gBattleOutcome == 0
         && !Coop_IsTransportConnected())
     {
         sCoopBattleLinkLossHandled = TRUE;
-        gBattleOutcome = B_OUTCOME_FORFEITED;
+        gBattleOutcome = B_OUTCOME_PLAYER_TELEPORTED;
     }
 #endif
 
@@ -5971,59 +5971,64 @@ static void HandleEndTurn_FinishBattle(void)
             TryPutBreakingNewsOnAir();
         }
 
-        if (IsNuzlockeEasyActive())
+        // Peer-drop abort restores the pre-battle party; do not persist Nuzlocke
+        // faint deletions from a battle that never counted.
+        if (!Coop_DidPeerDropAbortBattle())
         {
-            if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                                        | BATTLE_TYPE_LINK_IN_BATTLE
-                                        | BATTLE_TYPE_FIRST_BATTLE
-                                        | BATTLE_TYPE_CATCH_TUTORIAL
-                                        | BATTLE_TYPE_INGAME_PARTNER
-                                        | BATTLE_TYPE_TOWER_LINK_MULTI
-                                        | BATTLE_TYPE_RECORDED_LINK
-                                        | BATTLE_TYPE_FRONTIER
-                                        | BATTLE_TYPE_TRAINER_HILL))
-                || (gBattleTypeFlags & BATTLE_TYPE_COOP))
-                NuzlockeDeleteFaintedPartyPokemon();
-        }
-        if (IsNuzlockeActive())
-        {
-            if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
-                                        | BATTLE_TYPE_LINK_IN_BATTLE
-                                        | BATTLE_TYPE_FIRST_BATTLE
-                                        | BATTLE_TYPE_CATCH_TUTORIAL
-                                        | BATTLE_TYPE_INGAME_PARTNER
-                                        | BATTLE_TYPE_TOWER_LINK_MULTI
-                                        | BATTLE_TYPE_RECORDED_LINK
-                                        | BATTLE_TYPE_FRONTIER
-                                        | BATTLE_TYPE_TRAINER_HILL))
-                || (gBattleTypeFlags & BATTLE_TYPE_COOP))
-                NuzlockeDeleteFaintedPartyPokemon();
-            if (!(gBattleTypeFlags & (BATTLE_TYPE_DOUBLE
-                                        | BATTLE_TYPE_LINK
-                                        | BATTLE_TYPE_TRAINER
-                                        | BATTLE_TYPE_FIRST_BATTLE
-                                        | BATTLE_TYPE_LINK_IN_BATTLE
-                                        | BATTLE_TYPE_MULTI
-                                        | BATTLE_TYPE_BATTLE_TOWER
-                                        | BATTLE_TYPE_CATCH_TUTORIAL
-                                        | BATTLE_TYPE_LEGENDARY
-                                        | BATTLE_TYPE_ROAMER
-                                        | BATTLE_TYPE_TWO_OPPONENTS
-                                        | BATTLE_TYPE_INGAME_PARTNER
-                                        | BATTLE_TYPE_TOWER_LINK_MULTI
-                                        | BATTLE_TYPE_RECORDED_LINK)))
+            if (IsNuzlockeEasyActive())
             {
-                // An off-type mon under the One Type Challenge could never have been
-                // caught, so it must not burn the route's Nuzlocke encounter.
-                // The Safari Zone / Bug Contest suspend the one-encounter-per-zone
-                // rule, so a catch there must not burn the zone either.
-                if (!NuzlockeIsSpeciesClauseActive && !OneTypeChallengeCaptureBlocked
-                 && !IsNuzlockeCaptureSuspended())
-                    NuzlockeFlagSet(NuzlockeGetCurrentRegionMapSectionId());
+                if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
+                                            | BATTLE_TYPE_LINK_IN_BATTLE
+                                            | BATTLE_TYPE_FIRST_BATTLE
+                                            | BATTLE_TYPE_CATCH_TUTORIAL
+                                            | BATTLE_TYPE_INGAME_PARTNER
+                                            | BATTLE_TYPE_TOWER_LINK_MULTI
+                                            | BATTLE_TYPE_RECORDED_LINK
+                                            | BATTLE_TYPE_FRONTIER
+                                            | BATTLE_TYPE_TRAINER_HILL))
+                    || (gBattleTypeFlags & BATTLE_TYPE_COOP))
+                    NuzlockeDeleteFaintedPartyPokemon();
             }
-            NuzlockeIsCaptureBlocked = FALSE;
-            NuzlockeIsSpeciesClauseActive = FALSE;
-            OneTypeChallengeCaptureBlocked = FALSE;
+            if (IsNuzlockeActive())
+            {
+                if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
+                                            | BATTLE_TYPE_LINK_IN_BATTLE
+                                            | BATTLE_TYPE_FIRST_BATTLE
+                                            | BATTLE_TYPE_CATCH_TUTORIAL
+                                            | BATTLE_TYPE_INGAME_PARTNER
+                                            | BATTLE_TYPE_TOWER_LINK_MULTI
+                                            | BATTLE_TYPE_RECORDED_LINK
+                                            | BATTLE_TYPE_FRONTIER
+                                            | BATTLE_TYPE_TRAINER_HILL))
+                    || (gBattleTypeFlags & BATTLE_TYPE_COOP))
+                    NuzlockeDeleteFaintedPartyPokemon();
+                if (!(gBattleTypeFlags & (BATTLE_TYPE_DOUBLE
+                                            | BATTLE_TYPE_LINK
+                                            | BATTLE_TYPE_TRAINER
+                                            | BATTLE_TYPE_FIRST_BATTLE
+                                            | BATTLE_TYPE_LINK_IN_BATTLE
+                                            | BATTLE_TYPE_MULTI
+                                            | BATTLE_TYPE_BATTLE_TOWER
+                                            | BATTLE_TYPE_CATCH_TUTORIAL
+                                            | BATTLE_TYPE_LEGENDARY
+                                            | BATTLE_TYPE_ROAMER
+                                            | BATTLE_TYPE_TWO_OPPONENTS
+                                            | BATTLE_TYPE_INGAME_PARTNER
+                                            | BATTLE_TYPE_TOWER_LINK_MULTI
+                                            | BATTLE_TYPE_RECORDED_LINK)))
+                {
+                    // An off-type mon under the One Type Challenge could never have been
+                    // caught, so it must not burn the route's Nuzlocke encounter.
+                    // The Safari Zone / Bug Contest suspend the one-encounter-per-zone
+                    // rule, so a catch there must not burn the zone either.
+                    if (!NuzlockeIsSpeciesClauseActive && !OneTypeChallengeCaptureBlocked
+                     && !IsNuzlockeCaptureSuspended())
+                        NuzlockeFlagSet(NuzlockeGetCurrentRegionMapSectionId());
+                }
+                NuzlockeIsCaptureBlocked = FALSE;
+                NuzlockeIsSpeciesClauseActive = FALSE;
+                OneTypeChallengeCaptureBlocked = FALSE;
+            }
         }
 
         BeginFastPaletteFade(3);
@@ -6072,7 +6077,8 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
         ClearCurrentTrainerWantRematchVsSeeker();
         gDexNavSpecies = SPECIES_NONE;
         ResetSpriteData();
-        if ((!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP))
+        if (!Coop_DidPeerDropAbortBattle()
+            && (!(gBattleTypeFlags & BATTLE_TYPE_LINK) || (gBattleTypeFlags & BATTLE_TYPE_COOP))
             && !(gBattleTypeFlags & (BATTLE_TYPE_RECORDED_LINK
                                      | BATTLE_TYPE_FIRST_BATTLE
                                      | BATTLE_TYPE_SAFARI
@@ -6589,6 +6595,22 @@ bool32 DidPlayerForfeitNormalTrainerBattle(void)
         return FALSE;
 
     return (gBattleOutcome == B_OUTCOME_FORFEITED);
+}
+
+bool8 Coop_DidPeerDropAbortBattle(void)
+{
+#if IS_HNS
+    return sCoopBattleLinkLossHandled;
+#else
+    return FALSE;
+#endif
+}
+
+void Coop_ClearPeerDropAbortBattle(void)
+{
+#if IS_HNS
+    sCoopBattleLinkLossHandled = FALSE;
+#endif
 }
 
 // Wins the battle instantly. Used in the battle debug with LIST_ITEM_INSTANT_WIN

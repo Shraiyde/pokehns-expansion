@@ -116,6 +116,8 @@ u32 GeneratePersonalityForGender(u32 gender, u32 species);
 void CustomTrainerPartyAssignMoves(struct Pokemon *mon, const struct TrainerMon *partyEntry);
 bool32 CanPlayerForfeitNormalTrainerBattle(void);
 bool32 DidPlayerForfeitNormalTrainerBattle(void);
+bool8 Coop_DidPeerDropAbortBattle(void);
+void Coop_ClearPeerDropAbortBattle(void);
 void BattleDebug_WonBattle(void);
 s32 Factorial(s32 n);
 
