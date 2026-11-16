@@ -2381,14 +2381,61 @@ bool8 Coop_IsStorySyncReady(void) { return FALSE; }
 #endif
 
 #if IS_HNS
+// Partners must be within this Manhattan tile distance to join a trainer
+// double. Farther (or unpublished remote coords) keeps the encounter solo.
+#define COOP_JOIN_NEARBY_TILES 12
+
+static bool8 Coop_ArePartnersNearby(void)
+{
+    struct ObjectEvent *obj;
+    s16 localX, localY;
+    s16 remoteX = (s16)gHnsCoopMailbox.remoteX;
+    s16 remoteY = (s16)gHnsCoopMailbox.remoteY;
+    s16 dx, dy;
+
+    // (0,0) means the peer has not published a position yet — do not guess.
+    if (remoteX == 0 && remoteY == 0)
+        return FALSE;
+
+    if (IsOverworldLinkActive())
+    {
+        struct LinkPlayerObjectEvent *linkPlayer = &gLinkPlayerObjectEvents[gLocalLinkPlayerId];
+        if (!linkPlayer->active)
+            return FALSE;
+        obj = &gObjectEvents[linkPlayer->objEventId];
+        if (!obj->active)
+            return FALSE;
+    }
+    else
+    {
+        obj = &gObjectEvents[gPlayerAvatar.objectEventId];
+        if (!obj->active)
+            return FALSE;
+    }
+
+    localX = obj->currentCoords.x;
+    localY = obj->currentCoords.y;
+    dx = localX - remoteX;
+    dy = localY - remoteY;
+    if (dx < 0)
+        dx = -dx;
+    if (dy < 0)
+        dy = -dy;
+    return (dx + dy) <= COOP_JOIN_NEARBY_TILES;
+}
+
 bool8 Coop_ArePlayersOnSameMap(void)
 {
+    // Full SIO link + challenge handshake + same map + partner not in a solo
+    // activity (remoteSioActive) + nearby. Callers that also need story sync
+    // (trainer battles) check Coop_IsStorySyncReady themselves.
     return IsCoopLinkActive()
         && gHnsCoopMailbox.remoteConfigReady != 0
         && (!gHnsCoopMailbox.hostRole || gHnsCoopMailbox.remoteConfigReady == gHnsCoopMailbox.localConfigReady)
         && gHnsCoopMailbox.remoteMapReady
         && gHnsCoopMailbox.remoteSioActive
-        && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
+        && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId
+        && Coop_ArePartnersNearby();
 }
 
 void Coop_SetSioActive(bool8 active)

@@ -75,6 +75,7 @@ static void DoSafariBattle(void);
 static void DoBugContestBattle(void);
 static void DoGhostBattle(void);
 static void DoStandardWildBattle(bool32 isDouble);
+static void HardenWildBattleSolo(void);
 static void CB2_EndWildBattle(void);
 static void CB2_EndScriptedWildBattle(void);
 static void CB2_EndMarowakBattle(void);
@@ -402,6 +403,14 @@ void BattleSetup_StartBattlePikeWildBattle(void)
     DoBattlePikeWildBattle();
 }
 
+// Wild encounters are always per-player. Clear any co-op/link bits and mark
+// SIO inactive so the partner will not try to join a trainer mid-wild.
+static void HardenWildBattleSolo(void)
+{
+    gBattleTypeFlags &= ~(BATTLE_TYPE_COOP | BATTLE_TYPE_LINK);
+    Coop_SetSioActive(FALSE);
+}
+
 static void DoStandardWildBattle(bool32 isDouble)
 {
     LockPlayerFieldControls();
@@ -411,6 +420,7 @@ static void DoStandardWildBattle(bool32 isDouble)
     gBattleTypeFlags = 0;
     if (IsNPCFollowerWildBattle())
     {
+        // Existing non-coop follower wild doubles (INGAME_PARTNER only).
         gBattleTypeFlags |= BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_DOUBLE;
     }
     else if (isDouble)
@@ -420,6 +430,7 @@ static void DoStandardWildBattle(bool32 isDouble)
         VarSet(VAR_TEMP_E, 0);
         gBattleTypeFlags |= BATTLE_TYPE_PYRAMID;
     }
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -439,6 +450,7 @@ void DoStandardWildBattle_Debug(void)
         VarSet(VAR_TEMP_PLAYING_PYRAMID_MUSIC, 0);
         gBattleTypeFlags |= BATTLE_TYPE_PYRAMID;
     }
+    HardenWildBattleSolo();
     CreateBattleStartTask_Debug(GetWildBattleTransition(), 0);
     //IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     //IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -459,6 +471,7 @@ void BattleSetup_StartRoamerBattle(void)
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_ROAMER;
+    HardenWildBattleSolo();
     u16 song = 0;
 #if IS_HNS
     u16 species = (&gSaveBlock1Ptr->roamer[gEncounteredRoamerIndex])->species;
@@ -483,6 +496,7 @@ static void DoSafariBattle(void)
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndSafariBattle;
     gBattleTypeFlags = BATTLE_TYPE_SAFARI;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
 }
 
@@ -493,6 +507,7 @@ static void DoBugContestBattle(void)
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndBugContestBattle;
     gBattleTypeFlags = 0;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -507,6 +522,7 @@ static void DoGhostBattle(void)
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_GHOST;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     SetMonData(&gEnemyParty[0], MON_DATA_NICKNAME, gText_Ghost);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
@@ -520,6 +536,7 @@ static void DoBattlePikeWildBattle(void)
     StopPlayerAvatar();
     gMain.savedCallback = CB2_EndWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_PIKE;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -532,9 +549,9 @@ static bool8 AreCoopPlayersOnSameMap(void)
     u8 i;
     u8 activePlayers = 0;
 
-    // A live relay connection alone is not enough: both games must currently
-    // have both link-player objects loaded on the same overworld map. If the
-    // partner is elsewhere, this encounter remains a normal solo trainer fight.
+    // Story sync + full SIO same-map/nearby gate (Coop_ArePlayersOnSameMap) +
+    // both link-player objects loaded. Partner far away, on another map, or in
+    // a solo activity → normal solo trainer fight.
     if (!Coop_IsStorySyncReady() || !Coop_ArePlayersOnSameMap() || gFieldLinkPlayerCount < 2)
         return FALSE;
 
@@ -615,6 +632,7 @@ void BattleSetup_StartScriptedWildBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = 0;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -627,6 +645,7 @@ void BattleSetup_StartScriptedDoubleWildBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_DOUBLE;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -639,6 +658,7 @@ void StartMarowakBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndMarowakBattle;
     gBattleTypeFlags = BATTLE_TYPE_GHOST;
+    HardenWildBattleSolo();
 
     if (CheckBagHasItem(ITEM_SILPH_SCOPE, 1))
     {
@@ -658,6 +678,7 @@ void BattleSetup_StartLatiBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_LEGENDARY;
+    HardenWildBattleSolo();
     CreateBattleStartTask(GetWildBattleTransition(), 0);
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_WILD_BATTLES);
@@ -670,6 +691,7 @@ void BattleSetup_StartLegendaryBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_LEGENDARY;
+    HardenWildBattleSolo();
 
     switch (GetMonData(&gEnemyParty[0], MON_DATA_SPECIES))
     {
@@ -731,6 +753,7 @@ void StartGroudonKyogreBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_LEGENDARY;
+    HardenWildBattleSolo();
 
     if (gGameVersion == VERSION_RUBY)
         CreateBattleStartTask(B_TRANSITION_ANGLED_WIPES, MUS_VS_KYOGRE_GROUDON); // GROUDON
@@ -751,6 +774,7 @@ void StartRegiBattle(void)
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_LEGENDARY;
+    HardenWildBattleSolo();
 
     species = GetMonData(&gEnemyParty[0], MON_DATA_SPECIES);
     switch (species)
