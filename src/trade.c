@@ -492,6 +492,9 @@ static void CB2_CreateTradeMenu(void)
         }
         else
         {
+            // Already linked (co-op keeps the 2P connection): switch link type
+            // so party exchange treats this as a trade session.
+            gLinkType = LINKTYPE_TRADE;
             gMain.state = 4;
         }
         break;
@@ -912,6 +915,11 @@ static void CB_WaitToStartTrade(void)
         {
             sTradeMenu->callbackId = CB_WAIT_TO_START_RFU_TRADE;
         }
+        else if (Coop_IsTransportConnected())
+        {
+            // Keep the co-op link through the trade animation.
+            sTradeMenu->callbackId = CB_START_LINK_TRADE;
+        }
         else
         {
             SetCloseLinkCallbackAndType(32);
@@ -939,8 +947,8 @@ static void CB_StartLinkTrade(void)
     }
     else
     {
-        // Cable Link Trade
-        if (!gReceivedRemoteLinkPlayers)
+        // Cable Link Trade. Co-op keeps gReceivedRemoteLinkPlayers set.
+        if (!gReceivedRemoteLinkPlayers || Coop_IsTransportConnected())
         {
             Free(sMenuTextTileBuffer);
             FreeAllWindowBuffers();
@@ -1732,11 +1740,24 @@ static void CB_InitExitCanceledTrade(void)
     if (!gPaletteFade.active)
     {
         if (gWirelessCommType)
+        {
             SetLinkStandbyCallback();
+            sTradeMenu->callbackId = CB_EXIT_CANCELED_TRADE;
+        }
+        else if (Coop_IsTransportConnected())
+        {
+            // Restore co-op link type and return without tearing down SIO.
+            gLinkType = LINKTYPE_COOP;
+            Free(sMenuTextTileBuffer);
+            Free(sTradeMenu);
+            FreeAllWindowBuffers();
+            SetMainCallback2(CB2_ReturnToFieldFromMultiplayer);
+        }
         else
+        {
             SetCloseLinkCallbackAndType(12);
-
-        sTradeMenu->callbackId = CB_EXIT_CANCELED_TRADE;
+            sTradeMenu->callbackId = CB_EXIT_CANCELED_TRADE;
+        }
     }
 }
 
@@ -4824,6 +4845,8 @@ static void CB2_SaveAndEndTrade(void)
         {
             if (gWirelessCommType && gMain.savedCallback == CB2_StartCreateTradeMenu)
                 SetTradeLinkStandbyCallback(3);
+            else if (Coop_IsTransportConnected())
+                gLinkType = LINKTYPE_COOP;
             else
                 SetCloseLinkCallback();
             gMain.state++;
@@ -4837,6 +4860,12 @@ static void CB2_SaveAndEndTrade(void)
                 gSoftResetDisabled = FALSE;
                 SetMainCallback2(CB2_FreeTradeAnim);
             }
+        }
+        else if (Coop_IsTransportConnected())
+        {
+            gLinkType = LINKTYPE_COOP;
+            gSoftResetDisabled = FALSE;
+            SetMainCallback2(CB2_FreeTradeAnim);
         }
         else if (!gReceivedRemoteLinkPlayers)
         {

@@ -205,6 +205,9 @@ EWRAM_DATA u16 gPauseCounterBattle = 0;
 EWRAM_DATA u16 gPaydayMoney = 0;
 EWRAM_DATA u8 gBattleCommunication[BATTLE_COMMUNICATION_ENTRIES_COUNT] = {0};
 EWRAM_DATA u8 gBattleOutcome = 0;
+#if IS_HNS
+static EWRAM_DATA bool8 sCoopBattleLinkLossHandled = FALSE;
+#endif
 EWRAM_DATA struct ProtectStruct gProtectStructs[MAX_BATTLERS_COUNT] = {0};
 EWRAM_DATA struct SpecialStatus gSpecialStatuses[MAX_BATTLERS_COUNT] = {0};
 EWRAM_DATA u16 gBattleWeather = 0;
@@ -3211,6 +3214,20 @@ void BeginBattleIntro(void)
 static void BattleMainCB1(void)
 {
     Coop_SetSioActive((gBattleTypeFlags & BATTLE_TYPE_COOP) != 0);
+
+#if IS_HNS
+    // Peer dropped the Android transport mid co-op battle: force a clean
+    // forfeit so both phones leave instead of hanging on link waits.
+    if ((gBattleTypeFlags & BATTLE_TYPE_COOP)
+        && !sCoopBattleLinkLossHandled
+        && gBattleOutcome == 0
+        && !Coop_IsTransportConnected())
+    {
+        sCoopBattleLinkLossHandled = TRUE;
+        gBattleOutcome = B_OUTCOME_FORFEITED;
+    }
+#endif
+
     gBattleMainFunc();
     for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
         gBattlerControllerFuncs[battler](battler);
@@ -3305,6 +3322,9 @@ static void BattleStartClearSetData(void)
 
     gMultiHitCounter = 0;
     gBattleOutcome = 0;
+#if IS_HNS
+    sCoopBattleLinkLossHandled = FALSE;
+#endif
     gBattleControllerExecFlags = 0;
     gPaydayMoney = 0;
     gBattleResources->battleScriptsStack->size = 0;

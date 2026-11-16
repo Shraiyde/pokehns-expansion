@@ -1111,6 +1111,16 @@ static void Task_StartWiredTrade(u8 taskId)
         gSelectedTradeMonPositions[TRADE_PLAYER] = 0;
         gSelectedTradeMonPositions[TRADE_PARTNER] = 0;
         m4aMPlayAllStop();
+        // Co-op already has a live 2-player link; closing it to reopen a
+        // trade link drops the session. Keep the connection and enter trade.
+        if (IsCoopLinkActive()
+            || (gReceivedRemoteLinkPlayers
+                && (gLinkType == LINKTYPE_COOP || Coop_IsTransportConnected())))
+        {
+            SetMainCallback2(CB2_StartCreateTradeMenu);
+            DestroyTask(taskId);
+            break;
+        }
         SetCloseLinkCallback();
         task->tState++;
         break;

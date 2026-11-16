@@ -261,6 +261,7 @@ static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
 static EWRAM_DATA bool8 sCoopInitialGymFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialBadgeFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
+static EWRAM_DATA bool8 sCoopInitialIcePathFlagStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialSyncStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
@@ -359,10 +360,72 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
     if (flagId >= TRAINER_FLAGS_START && flagId <= TRAINER_FLAGS_END)
         return TRUE;
 
+    // Progress-gating key items / HMs / unlocks. Consumable gifts, TMs, berries,
+    // nuggets, and gift-Pokémon ownership flags stay local to each player.
+    if (flagId == FLAG_RECEIVED_BIKE
+        || flagId == FLAG_HAS_MATCH_CALL
+        || flagId == FLAG_RECEIVED_HM_CUT
+        || flagId == FLAG_RECEIVED_HM_FLASH
+        || flagId == FLAG_RECEIVED_HM_ROCK_SMASH
+        || flagId == FLAG_RECEIVED_HM_STRENGTH
+        || flagId == FLAG_RECEIVED_HM_SURF
+        || flagId == FLAG_RECEIVED_POKENAV
+        || flagId == FLAG_RECEIVED_RUNNING_SHOES
+        || flagId == FLAG_RECEIVED_SQUIRTBOTTLE
+        || flagId == FLAG_GOT_SUPER_ROD
+#if FLAG_GET_HEADBUTT
+        || flagId == FLAG_GET_HEADBUTT
+#endif
+        || flagId == FLAG_ITEM_ICEPATH1_HM_WATERFALL)
+        return TRUE;
+
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
         || flagId == FLAG_GOT_PASSWORD_FROM_GRUNTF
         || flagId == FLAG_DEFEATED_SUDOWOODO
         || flagId == FLAG_DEFEATED_RED;
+}
+
+// When a peer shares a progress key/HM flag, grant the bag item if missing.
+// RUNNING_SHOES / MATCH_CALL / POKENAV / HEADBUTT are flag-only unlocks.
+static void Coop_GrantSharedProgressItem(u16 flagId)
+{
+    enum Item itemId = ITEM_NONE;
+
+    switch (flagId)
+    {
+    case FLAG_RECEIVED_BIKE:
+        itemId = ITEM_BICYCLE;
+        break;
+    case FLAG_RECEIVED_SQUIRTBOTTLE:
+        itemId = ITEM_SQUIRT_BOTTLE;
+        break;
+    case FLAG_RECEIVED_HM_CUT:
+        itemId = ITEM_HM_CUT;
+        break;
+    case FLAG_RECEIVED_HM_FLASH:
+        itemId = ITEM_HM_FLASH;
+        break;
+    case FLAG_RECEIVED_HM_ROCK_SMASH:
+        itemId = ITEM_HM_ROCK_SMASH;
+        break;
+    case FLAG_RECEIVED_HM_STRENGTH:
+        itemId = ITEM_HM_STRENGTH;
+        break;
+    case FLAG_RECEIVED_HM_SURF:
+        itemId = ITEM_HM_SURF;
+        break;
+    case FLAG_ITEM_ICEPATH1_HM_WATERFALL:
+        itemId = ITEM_HM_WATERFALL;
+        break;
+    case FLAG_GOT_SUPER_ROD:
+        itemId = ITEM_SUPER_ROD;
+        break;
+    default:
+        return;
+    }
+
+    if (!CheckBagHasItem(itemId, 1))
+        AddBagItem(itemId, 1);
 }
 
 static bool8 IsCoopSharedStoryVar(u16 varId)
@@ -444,14 +507,15 @@ static void Coop_QueueInitialSharedFlags(void)
             else
             {
                 sCoopInitialGymFlagsStarted = TRUE;
-                sCoopInitialFlagCursor = FLAG_GOT_PASSWORD_FROM_ETO;
+                // Scan RECEIVED key-item/HM flags through passwords / Red.
+                sCoopInitialFlagCursor = HNS_RECEIVED_START;
                 continue;
             }
         }
         else if (!sCoopInitialBadgeFlagsStarted)
         {
-            // Gym victories, boss defeats, and Rocket passwords live in
-            // their own block above the adventure flags; sync them here.
+            // Progress key-item / HM RECEIVED block through Rocket passwords
+            // and late boss flags. IsCoopSharedStoryFlag filters gifts/TMs.
             if (sCoopInitialFlagCursor <= FLAG_DEFEATED_RED)
                 flagId = sCoopInitialFlagCursor++;
             else
@@ -472,6 +536,12 @@ static void Coop_QueueInitialSharedFlags(void)
                 continue;
             }
         }
+        else if (!sCoopInitialIcePathFlagStarted)
+        {
+            // Progress-gating overworld ball lives in the item-ball block,
+            // outside the adventure/RECEIVED ranges scanned above.
+            flagId = FLAG_ITEM_ICEPATH1_HM_WATERFALL;
+        }
         else
         {
             if (sCoopInitialFlagCursor > TRAINER_FLAGS_END)
@@ -480,6 +550,26 @@ static void Coop_QueueInitialSharedFlags(void)
         }
 
         scanned++;
+        if (!sCoopInitialIcePathFlagStarted
+            && flagId == FLAG_ITEM_ICEPATH1_HM_WATERFALL)
+        {
+            // Always consume this one-shot scan slot, even when unset/unshared.
+            if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
+            {
+                sCoopInitialIcePathFlagStarted = TRUE;
+                continue;
+            }
+
+            write = gHnsCoopMailbox.outgoingFlagWrite;
+            read = gHnsCoopMailbox.outgoingFlagRead;
+            if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+                return;
+
+            Coop_QueueSharedFlagChange(flagId, TRUE);
+            sCoopInitialIcePathFlagStarted = TRUE;
+            continue;
+        }
+
         if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
             continue;
 
@@ -540,9 +630,15 @@ static void Coop_ProcessIncomingFlags(void)
         // legendary/static defeat or catch flags cannot apply them locally.
         if (((packed >> 16) & 1) && IsCoopSharedStoryFlag(flagId))
         {
+            bool8 wasSet = FlagGet(flagId);
+
             sApplyingRemoteStoryFlag = TRUE;
             FlagSet(flagId);
             sApplyingRemoteStoryFlag = FALSE;
+
+            // Newly shared progress key/HM: grant the bag item if missing.
+            if (!wasSet)
+                Coop_GrantSharedProgressItem(flagId);
         }
 
         read++;
@@ -599,6 +695,7 @@ static void Coop_ResetStorySyncQueues(void)
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
+    sCoopInitialIcePathFlagStarted = FALSE;
     sCoopInitialSyncStarted = FALSE;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
@@ -613,6 +710,7 @@ static void Coop_BeginInitialSharedFlagSync(void)
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
+    sCoopInitialIcePathFlagStarted = FALSE;
     sCoopInitialSyncStarted = TRUE;
     sCoopStorySyncReady = FALSE;
     gHnsCoopMailbox.localStorySyncReady = 0;
@@ -626,6 +724,7 @@ static void Coop_UpdateStorySyncReadiness(void)
 {
     bool32 initialScanComplete =
         sCoopInitialTrainerFlagsStarted
+        && sCoopInitialIcePathFlagStarted
         && sCoopInitialFlagCursor > TRAINER_FLAGS_END
         && sCoopInitialVarCursor >= ARRAY_COUNT(sCoopSharedStoryVars);
     u32 incomingFlagWrite = gHnsCoopMailbox.incomingFlagWrite;
@@ -2370,6 +2469,12 @@ bool8 IsCoopLinkActive(void)
         && gReceivedRemoteLinkPlayers;
 }
 
+bool8 Coop_IsTransportConnected(void)
+{
+    return gHnsCoopMailbox.magic == HNS_COOP_MAILBOX_MAGIC
+        && gHnsCoopMailbox.transportConnected != 0;
+}
+
 bool8 Coop_IsStorySyncReady(void)
 {
     return IsCoopLinkActive() && sCoopStorySyncReady
@@ -2377,6 +2482,7 @@ bool8 Coop_IsStorySyncReady(void)
 }
 #else
 bool8 IsCoopLinkActive(void) { return FALSE; }
+bool8 Coop_IsTransportConnected(void) { return FALSE; }
 bool8 Coop_IsStorySyncReady(void) { return FALSE; }
 #endif
 
@@ -2554,11 +2660,11 @@ static void Coop_SnapRemoteLinkPlayers(void)
     // Key input still drives facing and step animation, but the remote
     // avatar's position snaps to the peer's published coordinates so both
     // screens agree on where everyone is standing.
-    // When the peer is on a different map, their link object still exists
-    // here (SpawnLinkPlayers puts it next to us on every warp), so hide it
-    // instead of leaving a ghost standing on the wrong map. It comes back
-    // automatically when the maps match again.
-    sameMap = Coop_ArePlayersOnSameMap() || Coop_IsPeerVisible();
+    // Visibility is map-only: do not reuse Coop_ArePlayersOnSameMap, which
+    // also requires the ≤12-tile battle-nearby gate (and SIO/config checks).
+    // Hide the peer avatar only when maps differ; keep walk/snap polish.
+    sameMap = gHnsCoopMailbox.remoteMapReady
+        && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
 
     x = (s16)gHnsCoopMailbox.remoteX;
     y = (s16)gHnsCoopMailbox.remoteY;

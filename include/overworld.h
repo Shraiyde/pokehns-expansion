@@ -156,6 +156,7 @@ enum MapBattleScene GetCurrentMapBattleScene(void);
 void CleanupOverworldWindowsAndTilemaps(void);
 bool32 IsOverworldLinkActive(void);
 bool8 IsCoopLinkActive(void);
+bool8 Coop_IsTransportConnected(void);
 bool8 Coop_IsStorySyncReady(void);
 bool8 Coop_ArePlayersOnSameMap(void);
 void Coop_SetSioActive(bool8 active);
