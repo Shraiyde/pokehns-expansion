@@ -258,10 +258,13 @@ static EWRAM_DATA bool8 sApplyingRemoteStoryFlag = FALSE;
 static EWRAM_DATA bool8 sApplyingRemoteStoryVar = FALSE;
 static EWRAM_DATA u16 sCoopInitialFlagCursor = 0;
 static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
+static EWRAM_DATA bool8 sCoopInitialHidePokemonStarted = FALSE;
+static EWRAM_DATA bool8 sCoopInitialNpcHideStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialGymFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialBadgeFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
-static EWRAM_DATA bool8 sCoopInitialIcePathFlagStarted = FALSE;
+static EWRAM_DATA bool8 sCoopInitialExtraFlagsStarted = FALSE;
+static EWRAM_DATA u16 sCoopInitialExtraFlagCursor = 0;
 static EWRAM_DATA bool8 sCoopInitialSyncStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
@@ -345,6 +348,31 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_SINJOH_STORYLINE,
 };
 
+// Extra shared flags outside the contiguous adventure/badge/trainer scans
+// (item-ball HM, safari expansions, sys unlocks, extended story hides).
+static const u16 sCoopInitialExtraSharedFlags[] =
+{
+    FLAG_ITEM_ICEPATH1_HM_WATERFALL,
+    FLAG_SAFARI_ZONE_EAST_EXPANSION,
+    FLAG_SAFARI_ZONE_WEST_EXPANSION,
+    FLAG_SYS_GAME_CLEAR,
+    FLAG_SYS_NATIONAL_DEX,
+    FLAG_SYS_POKENAV_GET,
+    FLAG_HIDE_SLOWPOKE_WELL_TAILLESS_SLOWPOKES,
+    FLAG_HIDE_AZALEA_TOWN_TAILED_SLOWPOKES,
+    FLAG_HIDE_ROUTE13_BOAT,
+    FLAG_VISITED_NEW_SINJOH,
+    FLAG_VISITED_ALOLA,
+    FLAG_HIDE_SINJOHRUINS_STEVEN,
+    FLAG_HIDE_SINJOHRUINS_LAB_STEVEN,
+    FLAG_HIDE_SINJOHRUINS_ARCEUSROOM_STEVEN,
+    FLAG_HIDE_NEWSINJOH_STEVEN,
+    FLAG_HIDE_VERMILION_CITY_SAMSON,
+    FLAG_HIDE_ROUTE28_SCIENTIST,
+    FLAG_HIDE_SAMSONOAK_INTRO,
+    FLAG_ROUTE_49_KIMONOGIRL,
+};
+
 static bool8 IsCoopSharedStoryFlag(u16 flagId)
 {
     if (flagId >= FLAG_ADVENTURE_STARTED && flagId <= FLAG_UNLOCKED_GOLDENROD_UNDERGROUND_DOOR
@@ -358,6 +386,34 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
     if (flagId >= FLAG_BADGE01_GET && flagId <= FLAG_BADGE16_GET)
         return TRUE;
     if (flagId >= TRAINER_FLAGS_START && flagId <= TRAINER_FLAGS_END)
+        return TRUE;
+
+    // Story NPC hide/show for a consistent world. Legendary Celebi NPC stay
+    // per-player with the other static/legendary encounter hides.
+    if (flagId >= HNS_NPC_HIDE_START
+        && flagId < HNS_NPC_HIDE_START + HNS_NPC_HIDE_COUNT
+        && flagId != FLAG_HIDE_ILEX_FOREST_SECOND_CELEBI)
+        return TRUE;
+
+    // Path/story world Pokémon hides (not static legendaries / starter balls /
+    // beasts / Suicune route spawns / Union Cave Lapras / Rocket electrodes).
+    // Electrode objects pair with personal VAR_ELECTRODES_FAINTED and are
+    // re-shown from shared Mahogany town state on map load.
+    if (flagId == FLAG_HIDE_AZALEA_TOWN_FARFETCHD
+        || flagId == FLAG_HIDE_AZALEA_TOWN_SLOWPOKE
+        || flagId == FLAG_HIDE_AZALEA_ARIADOS_LEFT
+        || flagId == FLAG_HIDE_AZALEA_ARIADOS_MID
+        || flagId == FLAG_HIDE_AZALEA_ARIADOS_RIGHT
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_1
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_2
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_3
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_4
+        || flagId == FLAG_HIDE_LAKE_OF_RAGE_GYARADOS
+        || flagId == FLAG_HIDE_WHIRL_ISLANDS_TENTACRUEL
+        || flagId == FLAG_HIDE_SUDOWOODO
+        || flagId == FLAG_HIDE_CERULEAN_GYM_POKEMON
+        || flagId == FLAG_HIDE_VERMILION_SNORLAX
+        || flagId == FLAG_HIDE_BATTLE_FRONTIER_SUDOWOODO)
         return TRUE;
 
     // Progress-gating key items / HMs / unlocks. Consumable gifts, TMs, berries,
@@ -377,6 +433,39 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         || flagId == FLAG_GET_HEADBUTT
 #endif
         || flagId == FLAG_ITEM_ICEPATH1_HM_WATERFALL)
+        return TRUE;
+
+    // Match Call unlocks that gate story / Baoba safari progress.
+    if (flagId == FLAG_ADDED_MATCH_CALL_TO_POKENAV
+        || flagId == FLAG_ENABLE_BAOBA_MATCH_CALL
+        || flagId == FLAG_REGISTER_RIVAL_POKENAV)
+        return TRUE;
+
+    // Safari Zone world expansions (not in-zone session flags).
+    if (flagId == FLAG_SAFARI_ZONE_EAST_EXPANSION
+        || flagId == FLAG_SAFARI_ZONE_WEST_EXPANSION)
+        return TRUE;
+
+    // Postgame / PokeNav system unlocks needed for shared world access.
+    if (flagId == FLAG_SYS_GAME_CLEAR
+        || flagId == FLAG_SYS_NATIONAL_DEX
+        || flagId == FLAG_SYS_POKENAV_GET)
+        return TRUE;
+
+    // Extended story NPC / visit / path flags (legendaries and items stay out).
+    if (flagId == FLAG_HIDE_SLOWPOKE_WELL_TAILLESS_SLOWPOKES
+        || flagId == FLAG_HIDE_AZALEA_TOWN_TAILED_SLOWPOKES
+        || flagId == FLAG_HIDE_ROUTE13_BOAT
+        || flagId == FLAG_VISITED_NEW_SINJOH
+        || flagId == FLAG_VISITED_ALOLA
+        || flagId == FLAG_HIDE_SINJOHRUINS_STEVEN
+        || flagId == FLAG_HIDE_SINJOHRUINS_LAB_STEVEN
+        || flagId == FLAG_HIDE_SINJOHRUINS_ARCEUSROOM_STEVEN
+        || flagId == FLAG_HIDE_NEWSINJOH_STEVEN
+        || flagId == FLAG_HIDE_VERMILION_CITY_SAMSON
+        || flagId == FLAG_HIDE_ROUTE28_SCIENTIST
+        || flagId == FLAG_HIDE_SAMSONOAK_INTRO
+        || flagId == FLAG_ROUTE_49_KIMONOGIRL)
         return TRUE;
 
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
@@ -492,30 +581,54 @@ static void Coop_QueueInitialSharedFlags(void)
 {
     u8 scanned = 0;
 
-    // Scan the full Heart & Soul story-flag range, including the late Kanto
-    // boss/password flags, then scan the separate trainer-flag block.
+    // Bounded per-frame scan: hide Pokémon → NPC hides → adventure/quest
+    // through Battle Frontier Sudowoodo → badges → trainers → extra named
+    // shared flags (Ice Path HM, safari, sys unlocks, extended story).
+    // IsCoopSharedStoryFlag filters personal gifts/statics out of each range.
     while (scanned < 16)
     {
         u16 flagId;
         u32 write;
         u32 read;
+        bool8 fromExtraList = FALSE;
 
-        if (!sCoopInitialGymFlagsStarted)
+        if (!sCoopInitialHidePokemonStarted)
+        {
+            if (sCoopInitialFlagCursor < HNS_HIDE_POKEMON_START + HNS_HIDE_POKEMON_COUNT)
+                flagId = sCoopInitialFlagCursor++;
+            else
+            {
+                sCoopInitialHidePokemonStarted = TRUE;
+                sCoopInitialFlagCursor = HNS_NPC_HIDE_START;
+                continue;
+            }
+        }
+        else if (!sCoopInitialNpcHideStarted)
+        {
+            if (sCoopInitialFlagCursor < HNS_NPC_HIDE_START + HNS_NPC_HIDE_COUNT)
+                flagId = sCoopInitialFlagCursor++;
+            else
+            {
+                sCoopInitialNpcHideStarted = TRUE;
+                sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
+                continue;
+            }
+        }
+        else if (!sCoopInitialGymFlagsStarted)
         {
             if (sCoopInitialFlagCursor <= FLAG_DEFEATED_SUDOWOODO)
                 flagId = sCoopInitialFlagCursor++;
             else
             {
                 sCoopInitialGymFlagsStarted = TRUE;
-                // Scan RECEIVED key-item/HM flags through passwords / Red.
+                // Re-scan RECEIVED key-item/HM flags through passwords / Red
+                // so late joins still pick up progress unlocks quickly.
                 sCoopInitialFlagCursor = HNS_RECEIVED_START;
                 continue;
             }
         }
         else if (!sCoopInitialBadgeFlagsStarted)
         {
-            // Progress key-item / HM RECEIVED block through Rocket passwords
-            // and late boss flags. IsCoopSharedStoryFlag filters gifts/TMs.
             if (sCoopInitialFlagCursor <= FLAG_DEFEATED_RED)
                 flagId = sCoopInitialFlagCursor++;
             else
@@ -536,40 +649,26 @@ static void Coop_QueueInitialSharedFlags(void)
                 continue;
             }
         }
-        else if (!sCoopInitialIcePathFlagStarted)
+        else if (!sCoopInitialExtraFlagsStarted)
         {
-            // Progress-gating overworld ball lives in the item-ball block,
-            // outside the adventure/RECEIVED ranges scanned above.
-            flagId = FLAG_ITEM_ICEPATH1_HM_WATERFALL;
+            if (sCoopInitialFlagCursor <= TRAINER_FLAGS_END)
+                flagId = sCoopInitialFlagCursor++;
+            else
+            {
+                sCoopInitialExtraFlagsStarted = TRUE;
+                sCoopInitialExtraFlagCursor = 0;
+                continue;
+            }
         }
         else
         {
-            if (sCoopInitialFlagCursor > TRAINER_FLAGS_END)
+            if (sCoopInitialExtraFlagCursor >= ARRAY_COUNT(sCoopInitialExtraSharedFlags))
                 return;
-            flagId = sCoopInitialFlagCursor++;
+            flagId = sCoopInitialExtraSharedFlags[sCoopInitialExtraFlagCursor++];
+            fromExtraList = TRUE;
         }
 
         scanned++;
-        if (!sCoopInitialIcePathFlagStarted
-            && flagId == FLAG_ITEM_ICEPATH1_HM_WATERFALL)
-        {
-            // Always consume this one-shot scan slot, even when unset/unshared.
-            if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
-            {
-                sCoopInitialIcePathFlagStarted = TRUE;
-                continue;
-            }
-
-            write = gHnsCoopMailbox.outgoingFlagWrite;
-            read = gHnsCoopMailbox.outgoingFlagRead;
-            if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
-                return;
-
-            Coop_QueueSharedFlagChange(flagId, TRUE);
-            sCoopInitialIcePathFlagStarted = TRUE;
-            continue;
-        }
-
         if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
             continue;
 
@@ -577,7 +676,10 @@ static void Coop_QueueInitialSharedFlags(void)
         read = gHnsCoopMailbox.outgoingFlagRead;
         if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
         {
-            sCoopInitialFlagCursor--;
+            if (fromExtraList)
+                sCoopInitialExtraFlagCursor--;
+            else
+                sCoopInitialFlagCursor--;
             return;
         }
 
@@ -690,12 +792,15 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.remoteSioActive = 0;
     gHnsCoopMailbox.remoteX = 0;
     gHnsCoopMailbox.remoteY = 0;
-    sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
+    sCoopInitialFlagCursor = HNS_HIDE_POKEMON_START;
     sCoopInitialVarCursor = 0;
+    sCoopInitialHidePokemonStarted = FALSE;
+    sCoopInitialNpcHideStarted = FALSE;
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
-    sCoopInitialIcePathFlagStarted = FALSE;
+    sCoopInitialExtraFlagsStarted = FALSE;
+    sCoopInitialExtraFlagCursor = 0;
     sCoopInitialSyncStarted = FALSE;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
@@ -705,12 +810,15 @@ static void Coop_ResetStorySyncQueues(void)
 
 static void Coop_BeginInitialSharedFlagSync(void)
 {
-    sCoopInitialFlagCursor = FLAG_ADVENTURE_STARTED;
+    sCoopInitialFlagCursor = HNS_HIDE_POKEMON_START;
     sCoopInitialVarCursor = 0;
+    sCoopInitialHidePokemonStarted = FALSE;
+    sCoopInitialNpcHideStarted = FALSE;
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
-    sCoopInitialIcePathFlagStarted = FALSE;
+    sCoopInitialExtraFlagsStarted = FALSE;
+    sCoopInitialExtraFlagCursor = 0;
     sCoopInitialSyncStarted = TRUE;
     sCoopStorySyncReady = FALSE;
     gHnsCoopMailbox.localStorySyncReady = 0;
@@ -723,9 +831,8 @@ static void Coop_BeginInitialSharedFlagSync(void)
 static void Coop_UpdateStorySyncReadiness(void)
 {
     bool32 initialScanComplete =
-        sCoopInitialTrainerFlagsStarted
-        && sCoopInitialIcePathFlagStarted
-        && sCoopInitialFlagCursor > TRAINER_FLAGS_END
+        sCoopInitialExtraFlagsStarted
+        && sCoopInitialExtraFlagCursor >= ARRAY_COUNT(sCoopInitialExtraSharedFlags)
         && sCoopInitialVarCursor >= ARRAY_COUNT(sCoopSharedStoryVars);
     u32 incomingFlagWrite = gHnsCoopMailbox.incomingFlagWrite;
     u32 incomingVarWrite = gHnsCoopMailbox.incomingVarWrite;
