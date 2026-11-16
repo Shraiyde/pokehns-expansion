@@ -261,6 +261,7 @@ static EWRAM_DATA u16 sCoopInitialVarCursor = 0;
 static EWRAM_DATA bool8 sCoopInitialGymFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialBadgeFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
+static EWRAM_DATA bool8 sCoopInitialSyncStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
 static EWRAM_DATA u32 sCoopLastIncomingFlagWrite = 0;
@@ -270,6 +271,8 @@ static EWRAM_DATA u32 sCoopLastRemoteConfigReady = 0;
 static const u16 sCoopSharedStoryVars[] =
 {
     // Johto story, towns, gyms, and scripted encounters.
+    // Legendary/static personal progress (Ho-Oh/Lugia/Suicune/Regis/Nobles/
+    // Rocket Hideout electrodes) stays local and is intentionally omitted.
     VAR_AZALEA_TOWN_STATE,
     VAR_BAOBA_QUEST_STATE,
     VAR_BILLS_GRANDPA,
@@ -278,12 +281,9 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_CHERRYGROVE_CITY_STATE,
     VAR_CIANWOOD_CITY_STATE,
     VAR_CLEFAIRY_DOLL_STATE,
-    VAR_COMPLETED_HO_OH,
-    VAR_COMPLETED_LUGIA,
     VAR_DRAGONS_DEN_QUIZ,
     VAR_ECRUTEAK_CITY_STATE,
     VAR_ECRUTEAK_CITY_THEATER,
-    VAR_ELECTRODES_FAINTED,
     VAR_ELEVATOR,
     VAR_FAN_CLUB_CLEFAIRY,
     VAR_FAN_CLUB_GUY,
@@ -293,7 +293,6 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_KANTO_ROCKET_STORY_STATE,
     VAR_KENYA,
     VAR_LAKE_OF_RAGE_FISHERMAN,
-    VAR_LUGIA_OR_HOOH,
     VAR_LEAGUE_STATE,
     VAR_MAHOGANY_TOWN_STATE,
     VAR_MT_SILVER_STATE,
@@ -313,7 +312,6 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_RUINSOFALPH_STATE,
     VAR_SPROUT_TOWER,
     VAR_SSAQUA_STATE,
-    VAR_SUICUNE_ENCOUNTERS,
     VAR_TOHJO_FALLS_GIOVANNI_STATE,
     VAR_TRAIN,
     VAR_TRIGGER_ELM_ROCKET_CALL,
@@ -340,18 +338,9 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_VERMILION_CITY_STEVEN,
     VAR_VIRIDIAN_CITY_STATE,
     VAR_VIRIDIAN_FOREST_PICHU,
-    // Later postgame story arcs.
+    // Later postgame story arcs (non-legendary).
     VAR_ALOLA_STATE,
-    VAR_NOBLE_ARCANINE,
-    VAR_NOBLE_ELECTRODE,
-    VAR_NOBLE_KLEAVOR,
-    VAR_NOBLE_OVERQWIL,
-    VAR_NOBLE_SNEASLER,
-    VAR_NOBLE_TYPHLOSION,
-    VAR_NOBLE_URSALUNA,
-    VAR_NOBLE_WYRDEER,
     VAR_PLATECOUNTER,
-    VAR_REGIS_SCANNED,
     VAR_SINJOH_STORYLINE,
 };
 
@@ -362,8 +351,9 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         return TRUE;
     if (flagId >= FLAG_DEFEATED_VIOLET_GYM && flagId <= FLAG_DEFEATED_VIRIDIAN_GYM)
         return TRUE;
-    if (flagId >= FLAG_DEFEATED_HO_OH && flagId <= FLAG_DEFEATED_RED)
-        return TRUE;
+    // Legendary/static defeat and catch flags stay per-player. Only share
+    // FLAG_DEFEATED_RED from the legend/boss block (story boss, not a static).
+    // HNS_LEGEND_CAUGHT_* (FLAG_CAUGHT_HO_OH..FLAG_CAUGHT_MEW) are never shared.
     if (flagId >= FLAG_BADGE01_GET && flagId <= FLAG_BADGE16_GET)
         return TRUE;
     if (flagId >= TRAINER_FLAGS_START && flagId <= TRAINER_FLAGS_END)
@@ -371,7 +361,8 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
 
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
         || flagId == FLAG_GOT_PASSWORD_FROM_GRUNTF
-        || flagId == FLAG_DEFEATED_SUDOWOODO;
+        || flagId == FLAG_DEFEATED_SUDOWOODO
+        || flagId == FLAG_DEFEATED_RED;
 }
 
 static bool8 IsCoopSharedStoryVar(u16 varId)
@@ -387,6 +378,15 @@ static bool8 IsCoopSharedStoryVar(u16 varId)
     return FALSE;
 }
 
+// Presence-only co-op never completes the GBA SIO handshake (gameReady), but
+// the Android bridge still sets peerLinkReady once both phones are linked.
+// Queue story sync whenever transport is up and either path is ready.
+static bool32 Coop_CanQueueStorySync(void)
+{
+    return gHnsCoopMailbox.transportConnected
+        && (gHnsCoopMailbox.gameReady || gHnsCoopMailbox.peerLinkReady);
+}
+
 void Coop_QueueSharedVarChange(u16 varId, u16 value)
 {
     u32 write;
@@ -394,8 +394,7 @@ void Coop_QueueSharedVarChange(u16 varId, u16 value)
 
     // Story-state variables only advance; never propagate a reset.
     if (!value || value <= VarGet(varId) || sApplyingRemoteStoryVar
-        || !IsCoopSharedStoryVar(varId) || !gHnsCoopMailbox.gameReady
-        || !gReceivedRemoteLinkPlayers)
+        || !IsCoopSharedStoryVar(varId) || !Coop_CanQueueStorySync())
         return;
 
     write = gHnsCoopMailbox.outgoingVarWrite;
@@ -414,7 +413,7 @@ void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
 
     // Shared story progression is monotonic: only set flags are propagated.
     if (!value || sApplyingRemoteStoryFlag || !IsCoopSharedStoryFlag(flagId)
-        || !gHnsCoopMailbox.gameReady || !gReceivedRemoteLinkPlayers)
+        || !Coop_CanQueueStorySync())
         return;
 
     write = gHnsCoopMailbox.outgoingFlagWrite;
@@ -537,7 +536,9 @@ static void Coop_ProcessIncomingFlags(void)
         u32 packed = gHnsCoopMailbox.incomingFlags[read % HNS_COOP_FLAG_QUEUE_SIZE];
         u16 flagId = packed & 0xFFFF;
 
-        if ((packed >> 16) & 1)
+        // Ignore non-shared flags so older peers that still broadcast
+        // legendary/static defeat or catch flags cannot apply them locally.
+        if (((packed >> 16) & 1) && IsCoopSharedStoryFlag(flagId))
         {
             sApplyingRemoteStoryFlag = TRUE;
             FlagSet(flagId);
@@ -598,6 +599,7 @@ static void Coop_ResetStorySyncQueues(void)
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
+    sCoopInitialSyncStarted = FALSE;
     sCoopStorySyncReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
     sCoopLastIncomingFlagWrite = 0;
@@ -611,6 +613,7 @@ static void Coop_BeginInitialSharedFlagSync(void)
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
+    sCoopInitialSyncStarted = TRUE;
     sCoopStorySyncReady = FALSE;
     gHnsCoopMailbox.localStorySyncReady = 0;
     gHnsCoopMailbox.remoteStorySyncReady = 0;
@@ -658,6 +661,23 @@ static void Coop_UpdateStorySyncReadiness(void)
         sCoopStorySyncReady = TRUE;
         gHnsCoopMailbox.localStorySyncReady = 1;
     }
+}
+
+// Run the same initial story queue/process path used by the full-SIO link
+// callback, but also from presence-only overworld when peerLinkReady is set.
+static void Coop_ProcessStorySyncFrame(void)
+{
+    if (gHnsCoopMailbox.peerLinkReady && !sCoopInitialSyncStarted)
+        Coop_BeginInitialSharedFlagSync();
+
+    if (!Coop_CanQueueStorySync())
+        return;
+
+    Coop_ProcessIncomingFlags();
+    Coop_ProcessIncomingVars();
+    Coop_QueueInitialSharedFlags();
+    Coop_QueueInitialSharedVars();
+    Coop_UpdateStorySyncReadiness();
 }
 
 // The host publishes the ENTIRE ChallengeSettings struct (minus the local
@@ -2629,9 +2649,11 @@ void CB1_Overworld(void)
 #if IS_HNS
         // Publish presence and show the peer avatar even when the GBA SIO
         // link never completes. The vanilla link flow above owns this once
-        // CB1 switches to CB1_OverworldLink.
+        // CB1 switches to CB1_OverworldLink. Story sync also runs here so
+        // presence-only sessions still exchange shared adventure flags/vars.
         gHnsCoopMailbox.localMapId = (u32)gSaveBlock1Ptr->location.mapGroup
                                   | ((u32)gSaveBlock1Ptr->location.mapNum << 16);
+        Coop_ProcessStorySyncFrame();
         Coop_PublishLocalPosition();
         Coop_UpdateRemotePresence();
         Coop_SnapRemoteLinkPlayers();
@@ -3695,11 +3717,7 @@ static void CB1_OverworldLink(void)
     gHnsCoopMailbox.localSioActive = 1;
     gHnsCoopMailbox.localMapId = (u32)gSaveBlock1Ptr->location.mapGroup
                                | ((u32)gSaveBlock1Ptr->location.mapNum << 16);
-    Coop_ProcessIncomingFlags();
-    Coop_ProcessIncomingVars();
-    Coop_QueueInitialSharedFlags();
-    Coop_QueueInitialSharedVars();
-    Coop_UpdateStorySyncReadiness();
+    Coop_ProcessStorySyncFrame();
     Coop_PublishLocalPosition();
 #endif
 
