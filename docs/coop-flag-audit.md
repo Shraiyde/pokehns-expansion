@@ -8,15 +8,24 @@ actually propagates.
 Runtime filter: only flags/vars accepted by those helpers are queued, applied from
 the peer, or included in the bounded initial sync scan.
 
+**Clearflag sync:** `FlagSet` and `FlagClear` both queue shared changes when the
+local bit actually toggles. Packets carry `flagId | ((value?1:0) << 16)`. Incoming
+apply calls `FlagSet` (+ bag grant if newly set) or `FlagClear` (no grant), under
+`sApplyingRemoteStoryFlag`. Initial sync stays **SET-only** for progress
+(badges/trainers/quest/received/registration/sys unlocks). **Bidirectional hide**
+ranges also queue **CLEAR** when locally unset: NPC_HIDE (except Celebi), shared
+story HIDE_POKEMON (incl. electrodes), Ice Path boulders, and shared extended
+story hides — so reconnect mirrors object show state without wiping badges.
+
 ---
 
 ## 1. Classification rules
 
 | Class | Meaning | Examples |
 | --- | --- | --- |
-| **SHARED** | Both players need it for a consistent overworld | Story progress, gyms/badges, trainers defeated, key items/HMs, Match Call unlocks that gate story, NPC hide/show from story, path obstacles (Sudowoodo, Snorlax, …), town/gym/quest state vars, Rocket passwords, Red defeated |
-| **PER-PLAYER** | Personal rewards / encounters | Legendaries & statics (hide + defeated + caught), gift Pokémon ownership, normal item balls / hidden items, TMs / berries / held-item gifts, daily rewards, starter balls, personal inventory |
-| **MIXED** | Block contains both; named exceptions listed below | Hide-Pokémon, RECEIVED, Battle Frontier, Safari, Feature, EXTENDED, SYS_FLAGS |
+| **SHARED** | Both players need it for a consistent overworld | Story progress, gyms/badges, trainers defeated, key items/HMs, Match Call unlocks + rematch registration, NPC hide/show from story, path obstacles (Sudowoodo, Snorlax, Ice Path boulders, …), town/gym/quest state vars, Rocket passwords, Red defeated, Alola totem gates / boat mapsetup |
+| **PER-PLAYER** | Personal rewards / encounters | Legendaries & statics (hide + defeated + caught), gift Pokémon ownership, normal item balls / hidden items, TMs / berries / held-item gifts, phone gift pending (`FLAG_*_HAS_ITEM_HNS`, `VAR_*_ITEM_HNS`), daily rewards, starter balls, personal inventory, roaming legendaries |
+| **MIXED** | Block contains both; named exceptions listed below | Hide-Pokémon, RECEIVED, Battle Frontier, Safari, Feature, EXTENDED, SYS_FLAGS, MATCH_CALL |
 
 **Do not share:** personal inventory contents, party/PC, money, and anything that only
 marks “this console already collected a reward.”
@@ -39,7 +48,7 @@ appearance so both players experience the same story map.
 | `FLAG_HIDE_CERULEAN_GYM_POKEMON` | **SHARED** | Kanto Rocket / Misty gym story |
 | `FLAG_HIDE_WHIRL_ISLANDS_TENTACRUEL` | **SHARED** | Kimono / Whirl Islands story object |
 | `FLAG_HIDE_BATTLE_FRONTIER_SUDOWOODO` | **SHARED** | Pairs with shared `FLAG_DEFEATED_SUDOWOODO` |
-| Rocket Hideout electrodes (1–3) | PER-PLAYER | Pair with personal `VAR_ELECTRODES_FAINTED`; map scripts re-clear hides from shared Mahogany state |
+| Rocket Hideout electrodes (1–3) | **SHARED** | With `VAR_ELECTRODES_FAINTED`; bidirectional clear sync |
 | `FLAG_HIDE_UNION_CAVE_LAPRAS` | PER-PLAYER | Static gift encounter |
 | Beasts, Suicune routes, Ho-Oh, Lugia, Celebi, birds, Mewtwo, weather trio, Lati@s, Jirachi | PER-PLAYER | Legendary / static encounter objects |
 
@@ -52,15 +61,13 @@ appearance so both players experience the same story map.
 
 Everything else in this range (Silver, Rockets, Kurt/well, Radio Tower, Lance,
 gym-leader dojo placement, copycat doll, SS Aqua, Indigo guards, …) is **SHARED**
-so both players see the same story NPCs.
+so both players see the same story NPCs. Bidirectional clear sync on reconnect.
 
 Battle Frontier multi-partner / opponent / reporter hides fall in this range and
-are shared by the range rule (cosmetic BF lobby consistency). Revisit if BF lobby
-should stay personal.
+are shared by the range rule (cosmetic BF lobby consistency).
 
-Museum fossils (`FLAG_HIDE_PEWTER_CLAW/ROOT_FOSSIL`) are in this range → currently
-**SHARED** via the range. Fossils are also one-time item pickups; listed under
-follow-ups if personal collection is preferred later.
+Museum fossils (`FLAG_HIDE_PEWTER_CLAW/ROOT_FOSSIL`) are in this range → **SHARED**
+via the range (intentional leftover / optional carve-out; see §6).
 
 ### ITEM_BALL — `HNS_ITEM_BALL_START` (0xEA) · count 234 — **PER-PLAYER** (exception)
 
@@ -82,7 +89,8 @@ Goldenrod underground door, etc.
 ### RECEIVED — `HNS_RECEIVED_START` · count 53 — **MIXED**
 
 **SHARED (progress unlocks):** bike, Match Call, HMs Cut/Flash/Rock Smash/Strength/Surf,
-PokéNav, running shoes, Squirtbottle, Headbutt, Super Rod, Rocket passwords
+`FLAG_RECEIVED_HM_WHIRLPOOL` (Lance, Rocket Hideout B2F), PokéNav, running shoes,
+Squirtbottle, Headbutt, Super Rod, Rocket passwords
 (`FLAG_GOT_PASSWORD_FROM_ETO/GRUNTF`).
 
 **PER-PLAYER:** first potion, Odd Egg / Togepi egg, Hoenn starter / Dratini / Eevee /
@@ -117,8 +125,14 @@ Trade completion is personal (each player can complete the trade).
 | `FLAG_REGISTER_RIVAL_POKENAV` | **SHARED** |
 | `FLAG_ENABLE_PROF_BIRCH_MATCH_CALL` | PER-PLAYER / unused Emerald leftover |
 
-Rematch **registration** flags (`TRAINER_REGISTERED_FLAGS_START`, 0x310+) stay
-**PER-PLAYER** (phone call bookkeeping).
+### Trainer rematch registration — `TRAINER_REGISTERED_FLAGS_START` (0x310)..`FLAG_REGISTERED_REENA_HNS` — **SHARED**
+
+Both phones share the same Match Call rematch contacts so the phone book matches.
+
+| Related | Class | Reason |
+| --- | --- | --- |
+| `FLAG_*_HAS_ITEM_HNS` | **PER-PLAYER** | Pending phone gift for this console only |
+| `VAR_*_ITEM_HNS` | **PER-PLAYER** | Which gift item that contact is offering locally |
 
 ### MOVE_TUTOR — `HNS_MOVE_TUTOR_START` · 4 flags — **PER-PLAYER**
 
@@ -130,6 +144,8 @@ Rematch **registration** flags (`TRAINER_REGISTERED_FLAGS_START`, 0x310+) stay
 | --- | --- |
 | `FLAG_DEFEATED_SUDOWOODO` | **SHARED** (path / BF exterior story) |
 | Trade done, challenge cancel, multi partner chosen, gold/silver symbols, met NPCs, Scott BP | PER-PLAYER |
+
+BF lobby NPC hides are **SHARED** via the NPC_HIDE range (cosmetic consistency).
 
 ### SAFARI — `HNS_SAFARI_ZONE_START` · 4 flags — **MIXED**
 
@@ -152,20 +168,38 @@ Mom visited, pending daycare egg, wall clock set.
 
 Extra TM balls and hidden items.
 
+### Unused / puzzle hides (0x2F3–0x2FA, 0x304)
+
+| Flag | Class |
+| --- | --- |
+| `FLAG_HIDE_ICEPATH_B1F_BOULDER1`..`B2F_BOULDER4` | **SHARED** (bidirectional) |
+| `FLAG_RECEIVED_HM_WHIRLPOOL` (was `FLAG_UNUSED_36`) | **SHARED** (+ bag grant) |
+| `FLAG_LATIOS_OR_LATIAS_ROAMING` | PER-PLAYER |
+
 ### EXTENDED — `HNS_EXTENDED_CONTENT_START` (0x36A) — **MIXED**
 
 **SHARED (implemented):** Slowpoke well tailed/tailless hides, Route 13 boat,
-`FLAG_VISITED_NEW_SINJOH` / `FLAG_VISITED_ALOLA`, Sinjoh/New Sinjoh Steven hides,
-Vermilion Samson / Route 28 scientist / Samson Oak intro hides,
-`FLAG_ROUTE_49_KIMONOGIRL`.
+`FLAG_HIDE_FLYOVER` / `FLAG_HIDE_PHANT_OUTSIDE` / `FLAG_HIDE_PHANT_INSIDE`
+(Alola travel mapsetup), `FLAG_VISITED_NEW_SINJOH` / `FLAG_VISITED_ALOLA`,
+Sinjoh/New Sinjoh Steven hides, Vermilion Samson / Route 28 scientist /
+Samson Oak intro hides, `FLAG_ROUTE_49_KIMONOGIRL`,
+`FLAG_TRIGGERED_*_TOTEM`, `FLAG_DEFEATED_*_TOTEM`.
 
-**PER-PLAYER:** noble Pokémon hides, Regi / Arceus encounter hides, Tapu / Alolan
-static hides & battle/caught flags, item/hidden-item flags, NPC trade completions,
-move-tutor paid, decorations, Azure Flute hide, gift flags, totem day toggles.
+**PER-PLAYER:** noble Pokémon hides, Regi / Arceus encounter hides, Tapu
+`FLAG_BATTLED_TAPU_*` + Tapu/Alolan form static hides, totem mon hides
+(`FLAG_HIDE_*_TOTEM`), totem day toggles, `FLAG_FLYOVER_TAPU_*`,
+`FLAG_CAUGHT_ALL_*`, `FLAG_DEFEATED_SAMSON_OAK`, item/hidden-item flags,
+NPC trade completions, move-tutor paid, decorations, Azure Flute hide, gifts.
+
+**`FLAG_BATTLED_GOLEM/SANDSLASH/NINETALES/MUK/DUGTRIO/MAROWAK/RAICHU/EXEGGUTOR`:**
+PER-PLAYER. Map scripts only `setflag` them on static encounter start; nothing
+reads them to gate shared NPC/path state (hides use `FLAG_HIDE_*_ALOLA`).
 
 ### TRAINER_FLAGS — `TRAINER_FLAGS_START` (0x500)..`TRAINER_FLAGS_END` (0x85F) — **SHARED**
 
 Defeated-trainer flags for world consistency (re-battles / blocking trainers).
+Rematch “open” scheduling is engine/personal; no extra shared rematch-open flag
+beyond defeated trainers + Match Call registration.
 
 ### SYS_FLAGS — `SYS_FLAGS` (0x860+) — **MIXED**
 
@@ -178,6 +212,18 @@ Defeated-trainer flags for world consistency (re-battles / blocking trainers).
 ### DAILY_FLAGS — `DAILY_FLAGS_START` (0x910) — **PER-PLAYER**
 
 Haircuts, Bug Contest, Buena’s Password, flower shop berry, etc.
+
+### Berry trees / Bug Contest / Pokéathlon / Frontier records
+
+| System | Class | Notes |
+| --- | --- | --- |
+| Berry trees | PER-PLAYER | Daily plant/pick counters + tree state are personal |
+| Bug Contest | PER-PLAYER / session | `VAR_BUG_CONTEST_STATE`, `FLAG_SYS_BUG_CONTEST_MODE`, daily completion |
+| Safari in-zone session | PER-PLAYER | Expansions already **SHARED** |
+| Battle Frontier / Tower records | PER-PLAYER | Lobby NPC hides shared via NPC_HIDE |
+| Pokéathlon | PER-PLAYER | Music/assets only in tree; no shared story flags |
+| Ship / Magnet Train | **SHARED** | `VAR_SSAQUA_STATE`, `VAR_TRAIN` already in `sCoopSharedStoryVars` |
+| Roaming legendaries | PER-PLAYER | e.g. `FLAG_LATIOS_OR_LATIAS_ROAMING` |
 
 ---
 
@@ -203,7 +249,12 @@ Cinnabar; plus `VAR_BLACKTHORN_GYM_STATE`, `VAR_NUM_BADGES`, `VAR_ILEX_FOREST_FA
 `VAR_TRIGGER_ELM_ROCKET_CALL`, `VAR_ROUTE27_BAOBA_CALL`, `VAR_OAK_MT_SILVER_CALL`,
 `VAR_ROUTE28_SCIENTIST`, `VAR_VERMILION_CITY_SAMSON/STEVEN`,
 `VAR_VIRIDIAN_FOREST_PICHU`, `VAR_NEWBARKTOWN_LABSTATE`, `VAR_PALLETTOWN_LABSTATE`,
-`VAR_ALOLA_STATE`, `VAR_SINJOH_STORYLINE`, `VAR_PLATECOUNTER`.
+`VAR_ALOLA_STATE`, `VAR_ALOLA_TRAVEL`, `VAR_SLOWPOKE_TAIL`,
+`VAR_ELECTRODES_FAINTED`, `VAR_SINJOH_STORYLINE`, `VAR_PLATECOUNTER`.
+
+Var sync remains **monotonic increase only** (no zero/reset propagation). Transient
+travel resets rely on each console’s local map scripts after the shared peak value
+has been applied.
 
 ### PER-PLAYER (intentionally omitted)
 
@@ -212,7 +263,6 @@ Cinnabar; plus `VAR_BLACKTHORN_GYM_STATE`, `VAR_NUM_BADGES`, `VAR_ILEX_FOREST_FA
 | `VAR_COMPLETED_HO_OH`, `VAR_COMPLETED_LUGIA` | Legendary completion |
 | `VAR_SUICUNE_ENCOUNTERS` | Personal Suicune chase |
 | `VAR_LUGIA_OR_HOOH` | Personal beast choice |
-| `VAR_ELECTRODES_FAINTED` | Personal hideout electrode battles |
 | `VAR_REGIS_SCANNED` | Personal Regi scan progress |
 | `VAR_NOBLE_*` | Personal noble battles |
 | `VAR_SHUCKIE` | Loaned Pokémon ownership |
@@ -221,12 +271,6 @@ Cinnabar; plus `VAR_BLACKTHORN_GYM_STATE`, `VAR_NUM_BADGES`, `VAR_ILEX_FOREST_FA
 | `VAR_BUG_CONTEST_STATE`, daily counters | Session / daily |
 | Frontier / contest engine vars | Personal facility state |
 
-### Ambiguous / not shared yet
-
-- `VAR_ALOLA_TRAVEL` — map-script travel setup; may need sharing for simultaneous Alola trips.
-- `VAR_SLOWPOKE_TAIL` — Rocket/Azalea dialogue flavor; story-adjacent.
-- Ice Path boulder hide flags (`FLAG_HIDE_ICEPATH_*_BOULDER*`) — puzzle path state in unused block; not synced.
-
 ---
 
 ## 4. Script / map notes
@@ -234,31 +278,35 @@ Cinnabar; plus `VAR_BLACKTHORN_GYM_STATE`, `VAR_NUM_BADGES`, `VAR_ILEX_FOREST_FA
 **Must rely on shared flags/vars**
 
 - Map scripts that `setflag`/`clearflag` NPC or obstacle objects (Kurt/well Rockets,
-  Radio Tower occupation, Sudowoodo, Snorlax, Farfetch’d trail, gym Ariados).
+  Radio Tower occupation, Sudowoodo, Snorlax, Farfetch’d trail, gym Ariados,
+  Ice Path boulders, Rocket electrodes).
 - Door / statue / password gates (`VAR_ROCKET_PASSWORD`, hideout statues,
   Goldenrod underground door).
 - Town state machines (`VAR_*_STATE`) that change which NPCs spawn on enter.
 - Gym / badge / trainer defeat checks that permanently clear a blocker.
+- Alola boat/travel (`VAR_ALOLA_TRAVEL`, Route 13 boat / flyover / Phantonomy
+  mapsetup) and totem trigger/defeat gates.
 
 **Stay local**
 
-- `giveitem` for consumables / TMs / berries without a shared progress flag.
+- `giveitem` for consumables / TMs / berries without a shared progress flag
+  (Whirlpool now sets `FLAG_RECEIVED_HM_WHIRLPOOL` and grants on peer apply).
 - Legendary `setflag FLAG_HIDE_*` / `FLAG_CAUGHT_*` / `FLAG_DEFEATED_*` (except Red).
 - Item ball and hidden item scripts.
 - NPC trade and move-tutor “already did this” flags.
-- Daily event scripts and phone rematch registration.
+- Daily event scripts; phone **gift** pending flags/vars (registration is shared).
 
 **Peer apply behavior**
 
 - Shared progress HMs/keys still use `Coop_GrantSharedProgressItem` (bike, bottle,
-  Cut/Flash/Rock Smash/Strength/Surf, Waterfall ball, Super Rod).
-- Hide flags are set only — no invented item grants.
+  Cut/Flash/Rock Smash/Strength/Surf/Whirlpool, Waterfall ball, Super Rod).
+- Hide flags set or clear with no invented item grants.
 
 ---
 
-## 5. Gaps closed in this commit vs previously shared
+## 5. Gaps closed
 
-**Already shared before this audit**
+**Already shared before the classification audit**
 
 - Adventure/quest block (minus Route 25 nugget)
 - Gyms, badges, trainer flags
@@ -267,7 +315,7 @@ Cinnabar; plus `VAR_BLACKTHORN_GYM_STATE`, `VAR_NUM_BADGES`, `VAR_ILEX_FOREST_FA
 - Broad Johto/Kanto/`VAR_ALOLA_STATE`/`VAR_SINJOH_STORYLINE` story vars
 - Legendaries kept per-player; presence-only story sync path
 
-**Added / closed here**
+**Closed in the classification audit commit**
 
 - Entire story **NPC_HIDE** range (except Ilex second Celebi)
 - Story **HIDE_POKEMON** path/quest objects (Farfetch’d, Slowpoke, Ariados, Sudowoodo,
@@ -279,25 +327,26 @@ Cinnabar; plus `VAR_BLACKTHORN_GYM_STATE`, `VAR_NUM_BADGES`, `VAR_ILEX_FOREST_FA
   Alola/New Sinjoh visited, Samson/scientist intros, Route 49 Kimono)
 - Initial sync phases for hide-Pokémon + NPC-hide ranges and an extra named-flag list
 
+**Closed in this gap-close pass**
+
+1. **Clearflag peer mirror** — `FlagClear` queues shared clears; queue/apply pack bit16; bidirectional hide initial sync.
+2. **HM Whirlpool** — `FLAG_RECEIVED_HM_WHIRLPOOL` set in `RocketHideout_B2F_hns` after Lance `giveitem`; shared + grant.
+3. **Ice Path boulders** — `FLAG_HIDE_ICEPATH_B1F_BOULDER1`..`B2F_BOULDER4` shared (set + clear).
+4. **Story vars** — `VAR_ALOLA_TRAVEL`, `VAR_SLOWPOKE_TAIL`, `VAR_ELECTRODES_FAINTED` added.
+5. **Electrode hides** — electrode 1–3 shared with the var.
+6. **Phone gift timing** — rematch **registration** shared; `FLAG_*_HAS_ITEM_HNS` / `VAR_*_ITEM_HNS` stay personal.
+7. **Alola second pass** — totem triggered/defeated + boat/flyover/Phantonomy mapsetup shared; totem/static/Tapu battle hides and `FLAG_BATTLED_*` Alolan form bookkeeping stay personal.
+8. **Second sweep** — berry/Bug Contest/Safari session/BF records/Pokéathlon/roamers classified PER-PLAYER; ship/train vars confirmed SHARED; rematch world state via trainer defeat + registration only.
+
 ---
 
-## 6. Uncovered / follow-ups
+## 6. True leftovers only
 
-1. **Phone call timing** — rematch registration flags and `VAR_*_ITEM_HNS` stay
-   personal; call scripts may desync who gets gift prompts.
-2. **Daily events** — haircuts, Bug Contest, Buena, flower shop berries remain
-   per-player by design; document if co-op should share any.
-3. **HM Whirlpool** — given in Rocket Hideout via `giveitem` without a RECEIVED
-   flag; peer does not auto-gain Whirlpool when hideout story syncs.
-4. **Ice Path boulders** — puzzle object hides not in shared tables.
-5. **Museum fossils** — currently shared via NPC_HIDE range; may want PER-PLAYER.
-6. **`VAR_ALOLA_TRAVEL` / `VAR_SLOWPOKE_TAIL`** — ambiguous story helpers.
-7. **Electrode hide flags** — left personal; confirm in-play that shared Mahogany
-   state alone keeps the hideout visually consistent.
-8. **Extended Alola story flags** (`FLAG_DEFEATED_*_TOTEM`, `FLAG_BATTLED_*`,
-   visit/boat flags beyond those listed) — many are personal statics; a few may
-   gate shared Alola NPC placement and need a second pass.
-9. **BF lobby NPC hides** — shared by NPC_HIDE range; optional to carve out.
-10. **Clearflag / monotonic sync** — co-op only propagates flag **sets**; scripts
-    that `clearflag` a shared hide rely on the peer’s map scripts + shared vars
-    to recreate the clear, or on initial sync of the set state only.
+1. **Museum fossils** — still **SHARED** via NPC_HIDE range; optional carve-out to
+   PER-PLAYER if one-time claw/root pickups should not hide for the peer.
+2. **BF lobby NPC hides** — still **SHARED** via NPC_HIDE; optional carve-out if
+   lobby cosmetics should stay personal.
+3. **Daily events** — remain per-player by design (haircuts, Bug Contest, Buena,
+   flower shop berries); not a sync gap.
+4. **Monotonic vars** — shared story vars never propagate resets to 0; local map
+   scripts still clear transient values (`VAR_ALOLA_TRAVEL`, electrode init heaps).

@@ -263,6 +263,7 @@ static EWRAM_DATA bool8 sCoopInitialNpcHideStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialGymFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialBadgeFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialTrainerFlagsStarted = FALSE;
+static EWRAM_DATA bool8 sCoopInitialRegisteredFlagsStarted = FALSE;
 static EWRAM_DATA bool8 sCoopInitialExtraFlagsStarted = FALSE;
 static EWRAM_DATA u16 sCoopInitialExtraFlagCursor = 0;
 static EWRAM_DATA bool8 sCoopInitialSyncStarted = FALSE;
@@ -275,8 +276,8 @@ static EWRAM_DATA u32 sCoopLastRemoteConfigReady = 0;
 static const u16 sCoopSharedStoryVars[] =
 {
     // Johto story, towns, gyms, and scripted encounters.
-    // Legendary/static personal progress (Ho-Oh/Lugia/Suicune/Regis/Nobles/
-    // Rocket Hideout electrodes) stays local and is intentionally omitted.
+    // Legendary/static personal progress (Ho-Oh/Lugia/Suicune/Regis/Nobles)
+    // stays local and is intentionally omitted.
     VAR_AZALEA_TOWN_STATE,
     VAR_BAOBA_QUEST_STATE,
     VAR_BILLS_GRANDPA,
@@ -288,6 +289,7 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_DRAGONS_DEN_QUIZ,
     VAR_ECRUTEAK_CITY_STATE,
     VAR_ECRUTEAK_CITY_THEATER,
+    VAR_ELECTRODES_FAINTED,
     VAR_ELEVATOR,
     VAR_FAN_CLUB_CLEFAIRY,
     VAR_FAN_CLUB_GUY,
@@ -314,6 +316,7 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_ROUTE27_STATE,
     VAR_ROUTE39_BARN,
     VAR_RUINSOFALPH_STATE,
+    VAR_SLOWPOKE_TAIL,
     VAR_SPROUT_TOWER,
     VAR_SSAQUA_STATE,
     VAR_TOHJO_FALLS_GIOVANNI_STATE,
@@ -344,15 +347,29 @@ static const u16 sCoopSharedStoryVars[] =
     VAR_VIRIDIAN_FOREST_PICHU,
     // Later postgame story arcs (non-legendary).
     VAR_ALOLA_STATE,
+    VAR_ALOLA_TRAVEL,
     VAR_PLATECOUNTER,
     VAR_SINJOH_STORYLINE,
 };
 
 // Extra shared flags outside the contiguous adventure/badge/trainer scans
-// (item-ball HM, safari expansions, sys unlocks, extended story hides).
+// (item-ball HM, Whirlpool receipt, Ice Path boulders, electrodes, safari,
+// sys unlocks, Match Call registration, extended story / Alola gates).
 static const u16 sCoopInitialExtraSharedFlags[] =
 {
     FLAG_ITEM_ICEPATH1_HM_WATERFALL,
+    FLAG_RECEIVED_HM_WHIRLPOOL,
+    FLAG_HIDE_ICEPATH_B1F_BOULDER1,
+    FLAG_HIDE_ICEPATH_B1F_BOULDER2,
+    FLAG_HIDE_ICEPATH_B1F_BOULDER3,
+    FLAG_HIDE_ICEPATH_B1F_BOULDER4,
+    FLAG_HIDE_ICEPATH_B2F_BOULDER1,
+    FLAG_HIDE_ICEPATH_B2F_BOULDER2,
+    FLAG_HIDE_ICEPATH_B2F_BOULDER3,
+    FLAG_HIDE_ICEPATH_B2F_BOULDER4,
+    FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE1,
+    FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE2,
+    FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE3,
     FLAG_SAFARI_ZONE_EAST_EXPANSION,
     FLAG_SAFARI_ZONE_WEST_EXPANSION,
     FLAG_SYS_GAME_CLEAR,
@@ -361,6 +378,9 @@ static const u16 sCoopInitialExtraSharedFlags[] =
     FLAG_HIDE_SLOWPOKE_WELL_TAILLESS_SLOWPOKES,
     FLAG_HIDE_AZALEA_TOWN_TAILED_SLOWPOKES,
     FLAG_HIDE_ROUTE13_BOAT,
+    FLAG_HIDE_FLYOVER,
+    FLAG_HIDE_PHANT_OUTSIDE,
+    FLAG_HIDE_PHANT_INSIDE,
     FLAG_VISITED_NEW_SINJOH,
     FLAG_VISITED_ALOLA,
     FLAG_HIDE_SINJOHRUINS_STEVEN,
@@ -371,7 +391,78 @@ static const u16 sCoopInitialExtraSharedFlags[] =
     FLAG_HIDE_ROUTE28_SCIENTIST,
     FLAG_HIDE_SAMSONOAK_INTRO,
     FLAG_ROUTE_49_KIMONOGIRL,
+    FLAG_TRIGGERED_PONI_TOTEM,
+    FLAG_TRIGGERED_ULAULA_TOTEM,
+    FLAG_TRIGGERED_AKALA_TOTEM,
+    FLAG_TRIGGERED_MELEMELE_TOTEM,
+    FLAG_DEFEATED_ULAULA_TOTEM,
+    FLAG_DEFEATED_PONI_TOTEM,
+    FLAG_DEFEATED_AKALA_TOTEM,
+    FLAG_DEFEATED_MELEMELE_TOTEM,
 };
+
+static bool8 IsCoopSharedStoryPokemonHide(u16 flagId)
+{
+    return flagId == FLAG_HIDE_AZALEA_TOWN_FARFETCHD
+        || flagId == FLAG_HIDE_AZALEA_TOWN_SLOWPOKE
+        || flagId == FLAG_HIDE_AZALEA_ARIADOS_LEFT
+        || flagId == FLAG_HIDE_AZALEA_ARIADOS_MID
+        || flagId == FLAG_HIDE_AZALEA_ARIADOS_RIGHT
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_1
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_2
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_3
+        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_4
+        || flagId == FLAG_HIDE_LAKE_OF_RAGE_GYARADOS
+        || flagId == FLAG_HIDE_WHIRL_ISLANDS_TENTACRUEL
+        || flagId == FLAG_HIDE_SUDOWOODO
+        || flagId == FLAG_HIDE_CERULEAN_GYM_POKEMON
+        || flagId == FLAG_HIDE_VERMILION_SNORLAX
+        || flagId == FLAG_HIDE_BATTLE_FRONTIER_SUDOWOODO
+        || flagId == FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE1
+        || flagId == FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE2
+        || flagId == FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE3;
+}
+
+static bool8 IsCoopSharedExtendedStoryHide(u16 flagId)
+{
+    return flagId == FLAG_HIDE_SLOWPOKE_WELL_TAILLESS_SLOWPOKES
+        || flagId == FLAG_HIDE_AZALEA_TOWN_TAILED_SLOWPOKES
+        || flagId == FLAG_HIDE_ROUTE13_BOAT
+        || flagId == FLAG_HIDE_FLYOVER
+        || flagId == FLAG_HIDE_PHANT_OUTSIDE
+        || flagId == FLAG_HIDE_PHANT_INSIDE
+        || flagId == FLAG_HIDE_SINJOHRUINS_STEVEN
+        || flagId == FLAG_HIDE_SINJOHRUINS_LAB_STEVEN
+        || flagId == FLAG_HIDE_SINJOHRUINS_ARCEUSROOM_STEVEN
+        || flagId == FLAG_HIDE_NEWSINJOH_STEVEN
+        || flagId == FLAG_HIDE_VERMILION_CITY_SAMSON
+        || flagId == FLAG_HIDE_ROUTE28_SCIENTIST
+        || flagId == FLAG_HIDE_SAMSONOAK_INTRO
+        || flagId == FLAG_ROUTE_49_KIMONOGIRL;
+}
+
+static bool8 IsCoopIcePathBoulderFlag(u16 flagId)
+{
+    return flagId >= FLAG_HIDE_ICEPATH_B1F_BOULDER1
+        && flagId <= FLAG_HIDE_ICEPATH_B2F_BOULDER4;
+}
+
+// Hide/show object flags that must mirror CLEARs on reconnect (not badges /
+// trainers / RECEIVED progress, which stay SET-only on initial sync).
+static bool8 IsCoopBidirectionalHideFlag(u16 flagId)
+{
+    if (flagId >= HNS_NPC_HIDE_START
+        && flagId < HNS_NPC_HIDE_START + HNS_NPC_HIDE_COUNT
+        && flagId != FLAG_HIDE_ILEX_FOREST_SECOND_CELEBI)
+        return TRUE;
+    if (IsCoopSharedStoryPokemonHide(flagId))
+        return TRUE;
+    if (IsCoopIcePathBoulderFlag(flagId))
+        return TRUE;
+    if (IsCoopSharedExtendedStoryHide(flagId))
+        return TRUE;
+    return FALSE;
+}
 
 static bool8 IsCoopSharedStoryFlag(u16 flagId)
 {
@@ -396,24 +487,13 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         return TRUE;
 
     // Path/story world Pokémon hides (not static legendaries / starter balls /
-    // beasts / Suicune route spawns / Union Cave Lapras / Rocket electrodes).
-    // Electrode objects pair with personal VAR_ELECTRODES_FAINTED and are
-    // re-shown from shared Mahogany town state on map load.
-    if (flagId == FLAG_HIDE_AZALEA_TOWN_FARFETCHD
-        || flagId == FLAG_HIDE_AZALEA_TOWN_SLOWPOKE
-        || flagId == FLAG_HIDE_AZALEA_ARIADOS_LEFT
-        || flagId == FLAG_HIDE_AZALEA_ARIADOS_MID
-        || flagId == FLAG_HIDE_AZALEA_ARIADOS_RIGHT
-        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_1
-        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_2
-        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_3
-        || flagId == FLAG_HIDE_ILEX_FOREST_FARFETCHD_4
-        || flagId == FLAG_HIDE_LAKE_OF_RAGE_GYARADOS
-        || flagId == FLAG_HIDE_WHIRL_ISLANDS_TENTACRUEL
-        || flagId == FLAG_HIDE_SUDOWOODO
-        || flagId == FLAG_HIDE_CERULEAN_GYM_POKEMON
-        || flagId == FLAG_HIDE_VERMILION_SNORLAX
-        || flagId == FLAG_HIDE_BATTLE_FRONTIER_SUDOWOODO)
+    // beasts / Suicune route spawns / Union Cave Lapras). Rocket electrodes are
+    // shared with VAR_ELECTRODES_FAINTED for hideout world consistency.
+    if (IsCoopSharedStoryPokemonHide(flagId))
+        return TRUE;
+
+    // Ice Path boulder puzzle object hides.
+    if (IsCoopIcePathBoulderFlag(flagId))
         return TRUE;
 
     // Progress-gating key items / HMs / unlocks. Consumable gifts, TMs, berries,
@@ -425,6 +505,7 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         || flagId == FLAG_RECEIVED_HM_ROCK_SMASH
         || flagId == FLAG_RECEIVED_HM_STRENGTH
         || flagId == FLAG_RECEIVED_HM_SURF
+        || flagId == FLAG_RECEIVED_HM_WHIRLPOOL
         || flagId == FLAG_RECEIVED_POKENAV
         || flagId == FLAG_RECEIVED_RUNNING_SHOES
         || flagId == FLAG_RECEIVED_SQUIRTBOTTLE
@@ -441,6 +522,12 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         || flagId == FLAG_REGISTER_RIVAL_POKENAV)
         return TRUE;
 
+    // Phone book rematch contacts (registration only). Gift pending flags
+    // FLAG_*_HAS_ITEM_HNS and VAR_*_ITEM_HNS stay per-player.
+    if (flagId >= TRAINER_REGISTERED_FLAGS_START
+        && flagId <= FLAG_REGISTERED_REENA_HNS)
+        return TRUE;
+
     // Safari Zone world expansions (not in-zone session flags).
     if (flagId == FLAG_SAFARI_ZONE_EAST_EXPANSION
         || flagId == FLAG_SAFARI_ZONE_WEST_EXPANSION)
@@ -453,19 +540,20 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         return TRUE;
 
     // Extended story NPC / visit / path flags (legendaries and items stay out).
-    if (flagId == FLAG_HIDE_SLOWPOKE_WELL_TAILLESS_SLOWPOKES
-        || flagId == FLAG_HIDE_AZALEA_TOWN_TAILED_SLOWPOKES
-        || flagId == FLAG_HIDE_ROUTE13_BOAT
+    if (IsCoopSharedExtendedStoryHide(flagId)
         || flagId == FLAG_VISITED_NEW_SINJOH
-        || flagId == FLAG_VISITED_ALOLA
-        || flagId == FLAG_HIDE_SINJOHRUINS_STEVEN
-        || flagId == FLAG_HIDE_SINJOHRUINS_LAB_STEVEN
-        || flagId == FLAG_HIDE_SINJOHRUINS_ARCEUSROOM_STEVEN
-        || flagId == FLAG_HIDE_NEWSINJOH_STEVEN
-        || flagId == FLAG_HIDE_VERMILION_CITY_SAMSON
-        || flagId == FLAG_HIDE_ROUTE28_SCIENTIST
-        || flagId == FLAG_HIDE_SAMSONOAK_INTRO
-        || flagId == FLAG_ROUTE_49_KIMONOGIRL)
+        || flagId == FLAG_VISITED_ALOLA)
+        return TRUE;
+
+    // Alola totem story gates (not personal totem/static encounter hides).
+    if (flagId == FLAG_TRIGGERED_PONI_TOTEM
+        || flagId == FLAG_TRIGGERED_ULAULA_TOTEM
+        || flagId == FLAG_TRIGGERED_AKALA_TOTEM
+        || flagId == FLAG_TRIGGERED_MELEMELE_TOTEM
+        || flagId == FLAG_DEFEATED_ULAULA_TOTEM
+        || flagId == FLAG_DEFEATED_PONI_TOTEM
+        || flagId == FLAG_DEFEATED_AKALA_TOTEM
+        || flagId == FLAG_DEFEATED_MELEMELE_TOTEM)
         return TRUE;
 
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO
@@ -502,6 +590,9 @@ static void Coop_GrantSharedProgressItem(u16 flagId)
         break;
     case FLAG_RECEIVED_HM_SURF:
         itemId = ITEM_HM_SURF;
+        break;
+    case FLAG_RECEIVED_HM_WHIRLPOOL:
+        itemId = ITEM_HM_WHIRLPOOL;
         break;
     case FLAG_ITEM_ICEPATH1_HM_WATERFALL:
         itemId = ITEM_HM_WATERFALL;
@@ -563,8 +654,9 @@ void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
     u32 write;
     u32 read;
 
-    // Shared story progression is monotonic: only set flags are propagated.
-    if (!value || sApplyingRemoteStoryFlag || !IsCoopSharedStoryFlag(flagId)
+    // Shared story flags propagate both SET and CLEAR so peer hide/show state
+    // stays mirrored (badges/trainers still only clear locally via scripts).
+    if (sApplyingRemoteStoryFlag || !IsCoopSharedStoryFlag(flagId)
         || !Coop_CanQueueStorySync())
         return;
 
@@ -573,7 +665,8 @@ void Coop_QueueSharedFlagChange(u16 flagId, bool8 value)
     if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
         return;
 
-    gHnsCoopMailbox.outgoingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] = flagId | (1u << 16);
+    gHnsCoopMailbox.outgoingFlags[write % HNS_COOP_FLAG_QUEUE_SIZE] =
+        flagId | ((value ? 1u : 0u) << 16);
     gHnsCoopMailbox.outgoingFlagWrite = write + 1;
 }
 
@@ -582,9 +675,11 @@ static void Coop_QueueInitialSharedFlags(void)
     u8 scanned = 0;
 
     // Bounded per-frame scan: hide Pokémon → NPC hides → adventure/quest
-    // through Battle Frontier Sudowoodo → badges → trainers → extra named
-    // shared flags (Ice Path HM, safari, sys unlocks, extended story).
+    // through Battle Frontier Sudowoodo → badges → trainers → Match Call
+    // registration → extra named shared flags (Ice Path HM/boulders,
+    // Whirlpool, electrodes, safari, sys unlocks, extended/Alola story).
     // IsCoopSharedStoryFlag filters personal gifts/statics out of each range.
+    // Bidirectional hide ranges also queue CLEAR when locally unset.
     while (scanned < 16)
     {
         u16 flagId;
@@ -649,9 +744,20 @@ static void Coop_QueueInitialSharedFlags(void)
                 continue;
             }
         }
-        else if (!sCoopInitialExtraFlagsStarted)
+        else if (!sCoopInitialRegisteredFlagsStarted)
         {
             if (sCoopInitialFlagCursor <= TRAINER_FLAGS_END)
+                flagId = sCoopInitialFlagCursor++;
+            else
+            {
+                sCoopInitialRegisteredFlagsStarted = TRUE;
+                sCoopInitialFlagCursor = TRAINER_REGISTERED_FLAGS_START;
+                continue;
+            }
+        }
+        else if (!sCoopInitialExtraFlagsStarted)
+        {
+            if (sCoopInitialFlagCursor <= FLAG_REGISTERED_REENA_HNS)
                 flagId = sCoopInitialFlagCursor++;
             else
             {
@@ -669,21 +775,40 @@ static void Coop_QueueInitialSharedFlags(void)
         }
 
         scanned++;
-        if (!FlagGet(flagId) || !IsCoopSharedStoryFlag(flagId))
+        if (!IsCoopSharedStoryFlag(flagId))
             continue;
 
-        write = gHnsCoopMailbox.outgoingFlagWrite;
-        read = gHnsCoopMailbox.outgoingFlagRead;
-        if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+        // Progress flags (badges/trainers/quest/received/registration): SET-only.
+        // Bidirectional hide ranges also queue CLEAR when locally unset so
+        // reconnect mirrors object show state without wiping badges.
+        if (FlagGet(flagId))
         {
-            if (fromExtraList)
-                sCoopInitialExtraFlagCursor--;
-            else
-                sCoopInitialFlagCursor--;
-            return;
+            write = gHnsCoopMailbox.outgoingFlagWrite;
+            read = gHnsCoopMailbox.outgoingFlagRead;
+            if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+            {
+                if (fromExtraList)
+                    sCoopInitialExtraFlagCursor--;
+                else
+                    sCoopInitialFlagCursor--;
+                return;
+            }
+            Coop_QueueSharedFlagChange(flagId, TRUE);
         }
-
-        Coop_QueueSharedFlagChange(flagId, TRUE);
+        else if (IsCoopBidirectionalHideFlag(flagId))
+        {
+            write = gHnsCoopMailbox.outgoingFlagWrite;
+            read = gHnsCoopMailbox.outgoingFlagRead;
+            if (write - read >= HNS_COOP_FLAG_QUEUE_SIZE)
+            {
+                if (fromExtraList)
+                    sCoopInitialExtraFlagCursor--;
+                else
+                    sCoopInitialFlagCursor--;
+                return;
+            }
+            Coop_QueueSharedFlagChange(flagId, FALSE);
+        }
     }
 }
 
@@ -727,20 +852,29 @@ static void Coop_ProcessIncomingFlags(void)
     {
         u32 packed = gHnsCoopMailbox.incomingFlags[read % HNS_COOP_FLAG_QUEUE_SIZE];
         u16 flagId = packed & 0xFFFF;
+        bool8 setValue = ((packed >> 16) & 1) != 0;
 
         // Ignore non-shared flags so older peers that still broadcast
         // legendary/static defeat or catch flags cannot apply them locally.
-        if (((packed >> 16) & 1) && IsCoopSharedStoryFlag(flagId))
+        if (IsCoopSharedStoryFlag(flagId))
         {
-            bool8 wasSet = FlagGet(flagId);
-
             sApplyingRemoteStoryFlag = TRUE;
-            FlagSet(flagId);
-            sApplyingRemoteStoryFlag = FALSE;
+            if (setValue)
+            {
+                bool8 wasSet = FlagGet(flagId);
 
-            // Newly shared progress key/HM: grant the bag item if missing.
-            if (!wasSet)
-                Coop_GrantSharedProgressItem(flagId);
+                FlagSet(flagId);
+                sApplyingRemoteStoryFlag = FALSE;
+
+                // Newly shared progress key/HM: grant the bag item if missing.
+                if (!wasSet)
+                    Coop_GrantSharedProgressItem(flagId);
+            }
+            else
+            {
+                FlagClear(flagId);
+                sApplyingRemoteStoryFlag = FALSE;
+            }
         }
 
         read++;
@@ -799,6 +933,7 @@ static void Coop_ResetStorySyncQueues(void)
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
+    sCoopInitialRegisteredFlagsStarted = FALSE;
     sCoopInitialExtraFlagsStarted = FALSE;
     sCoopInitialExtraFlagCursor = 0;
     sCoopInitialSyncStarted = FALSE;
@@ -817,6 +952,7 @@ static void Coop_BeginInitialSharedFlagSync(void)
     sCoopInitialGymFlagsStarted = FALSE;
     sCoopInitialBadgeFlagsStarted = FALSE;
     sCoopInitialTrainerFlagsStarted = FALSE;
+    sCoopInitialRegisteredFlagsStarted = FALSE;
     sCoopInitialExtraFlagsStarted = FALSE;
     sCoopInitialExtraFlagCursor = 0;
     sCoopInitialSyncStarted = TRUE;

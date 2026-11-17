@@ -847,7 +847,7 @@
 #define FLAG_PEWTER_GYM_NPC_TRADE_COMPLETED          0x301
 #define FLAG_OLIVINE_GYM_NPC_TRADE_COMPLETED         0x302
 #define FLAG_ENABLE_CONDITION                       0x303
-#define FLAG_UNUSED_36                              0x304
+#define FLAG_RECEIVED_HM_WHIRLPOOL                  0x304 // was FLAG_UNUSED_36; Lance gives HM07 in Rocket Hideout B2F
 #define FLAG_UNUSED_37                              0x305
 #define FLAG_UNUSED_38                              0x306
 #define FLAG_UNUSED_39                              0x307
