@@ -1043,7 +1043,7 @@ BattleFrontier_BattleTowerLobby_Text_CanLeaveUntilLossOrSevenWins:
 	.string "You'd best be certain that you're up\n"
 	.string "to the challenge.$"
 
-@ Legacy stub — Double desk is live
+@ Legacy stub - Double desk is live
 BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "DOUBLE BATTLE CORNER!\p"
@@ -1051,7 +1051,7 @@ BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction:
 	.string "attendant at this desk to challenge\l"
 	.string "the DOUBLE BATTLE ROOMS.$"
 
-@ Legacy stub — Multi desk is live
+@ Legacy stub - Multi desk is live
 BattleFrontier_BattleTowerLobby_Text_MultiBattleRoomConstruction:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "MULTI BATTLE CORNER!\p"

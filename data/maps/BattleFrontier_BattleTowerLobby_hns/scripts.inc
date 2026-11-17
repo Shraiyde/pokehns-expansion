@@ -1074,7 +1074,7 @@ BattleFrontier_BattleTowerLobby_Text_CanLeaveUntilLossOrSevenWins_hns:
 	.string "You'd best be certain that you're up\n"
 	.string "to the challenge.$"
 
-@ Legacy Emerald stubs — Double / Multi desks are live; kept for string-table stability.
+@ Legacy Emerald stubs - Double / Multi desks are live; kept for string-table stability.
 BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction_hns:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "DOUBLE BATTLE CORNER!\p"
@@ -1113,7 +1113,7 @@ BattleFrontier_BattleTowerLobby_Text_MultisCoopNote_hns:
 	.string "from the BATTLE SALON.\p"
 	.string "When you battle TRAINERS together out\n"
 	.string "in the field, you already fight as a\l"
-	.string "team — that won't change here.$"
+	.string "team - that won't change here.$"
 
 BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns:
 	.string "We look forward to seeing you on\n"

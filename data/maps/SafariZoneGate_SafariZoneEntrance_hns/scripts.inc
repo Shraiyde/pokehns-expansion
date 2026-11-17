@@ -424,4 +424,4 @@ SafariZoneGate_SafariZoneEntrance_Text_Engineer:
 	.string "WARDEN BAOBA's expansion crew is\n"
 	.string "still clearing this sector.\p"
 	.string "We'll open it once BAOBA gives the\n"
-	.string "word — hang tight!$"
+	.string "word - hang tight!$"
