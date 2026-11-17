@@ -202,6 +202,15 @@ void ClearLinkPlayerObjectEvents(void);
 bool16 SetTimeOfDay(u16 hours);
 bool8 MetatileBehavior_IsSurfableInSeafoamIslands(u16 metatileBehavior);
 
+#if IS_HNS
+// Reserved object-event slots for co-op partner (+ follower). Slot ids are
+// OBJECT_EVENTS_COUNT-1 / COUNT-2 (see overworld.c).
+bool8 Coop_IsReservedPresenceObjectEventId(u8 objectEventId);
+u8 Coop_GetReservedPresenceObjectEventId(void);
+u8 Coop_GetReservedRemoteFollowerObjectEventId(void);
+void Coop_PreferObjectEventSlot(u8 objectEventId);
+#endif
+
 // Item Description Headers
 enum ItemObtainFlags
 {

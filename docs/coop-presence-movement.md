@@ -39,7 +39,8 @@ passed. Fix: gate on `remoteMapReady` + map equality only.
 
 `OBJECT_EVENTS_COUNT == 16`. Dense outdoor views can fill every slot;
 `SpawnLinkPlayerObjectEvent` bailed silently. Indoor maps are sparse, so spawn
-succeeded more often. Fix: steal the farthest non-critical NPC slot when full.
+succeeded more often. Fix: **reserve** `OBJECT_EVENTS_COUNT-1` for the partner
+and `COUNT-2` for the remote follower so map NPCs never take those ids.
 
 ## Fixes
 
@@ -49,7 +50,7 @@ succeeded more often. Fix: steal the farthest non-critical NPC slot when full.
 | ROM | Spawn at `remoteX/Y` (fallback to local only if unpublished 0,0) |
 | ROM | Cardinal **step queue** (size 24); snap only if gap ≥ 8 tiles / map change |
 | ROM | Force a step if collision refuses, so the queue stays authoritative |
-| ROM | Steal farthest NPC slot when object table is full |
+| ROM | Reserved object-event slots for partner + remote follower |
 | Android | POSITION queue depth 32 + **AbortPolicy** (retry instead of drop) |
 
 Elevation / facing still come from the peer’s published mailbox words. Follower
@@ -75,3 +76,16 @@ Fix: invalidate presence link players (+ remote follower) in
 `InitObjectEventsReturnToField`, validate sprite `inUse` before trusting an
 active entry, and bump `localPresenceResync` so Android forces a POSITION
 exchange.
+
+## Always-visible partner (battle / menu / warp / cutscene)
+
+Hard requirement: on the same map, both players must see each other (and the
+partner follower) with no gaps after battles, bag/party/PC/save, warps, HM
+field moves, cutscenes that hide/reload objects, fades, or reconnects.
+
+| Mechanism | Behavior |
+| --- | --- |
+| Reserved slots | Partner = `OBJECT_EVENTS_COUNT-1`, remote follower = `COUNT-2`. `GetFirstInactive` / `GetAvailableObjectEventId` skip them so outdoor NPC density cannot steal them. |
+| Eviction block | `RemoveObjectEvent` no-ops on reserved ids; `SetObjectInvisibility` refuses to hide the remote follower / reserved slots; OOB cull skips reserved ids. Only `Coop_ForceClearObjectEventSlot` zeroes them for a controlled re-spawn. |
+| Every-frame watchdog | `CB1_Overworld` → `Coop_UpdateRemotePresence` / `Coop_UpdateRemoteFollower`: if peer is same-map but the avatar is missing, wrong slot, dead sprite, or hidden → ForceClear + spawn into the reserved slot immediately (same tick). |
+| Field return | Still invalidates stale link entries after battles/menus; watchdog re-spawns on the next CB1. |

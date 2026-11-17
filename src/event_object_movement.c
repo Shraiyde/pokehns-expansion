@@ -1514,16 +1514,42 @@ static void CreateReflectionEffectSprites(void)
     gSprites[spriteId].invisible = TRUE;
 }
 
+#if IS_HNS
+// When set, GetAvailableObjectEventId / GetFirstInactiveObjectEventId return
+// this slot next (used to place the co-op remote follower in its reserved id).
+static u8 sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
+
+void Coop_PreferObjectEventSlot(u8 objectEventId)
+{
+    sCoopPreferObjectEventId = objectEventId;
+}
+#endif
+
 u8 GetFirstInactiveObjectEventId(void)
 {
     u8 i;
+#if IS_HNS
+    if (sCoopPreferObjectEventId < OBJECT_EVENTS_COUNT
+     && !gObjectEvents[sCoopPreferObjectEventId].active)
+    {
+        i = sCoopPreferObjectEventId;
+        sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
+        return i;
+    }
+    sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
+#endif
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
+#if IS_HNS
+        // Keep co-op partner / remote-follower slots free for the watchdog.
+        if (Coop_IsReservedPresenceObjectEventId(i))
+            continue;
+#endif
         if (!gObjectEvents[i].active)
-            break;
+            return i;
     }
 
-    return i;
+    return OBJECT_EVENTS_COUNT;
 }
 
 u8 GetObjectEventIdByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroupId)
@@ -1780,24 +1806,50 @@ static bool8 GetAvailableObjectEventId(u16 localId, u8 mapNum, u8 mapGroup, u8 *
 {
     u8 i = 0;
 
-    for (i = 0; i < OBJECT_EVENTS_COUNT && gObjectEvents[i].active; i++)
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
-        if (gObjectEvents[i].localId == localId && gObjectEvents[i].mapNum == mapNum && gObjectEvents[i].mapGroup == mapGroup)
+        if (gObjectEvents[i].active
+         && gObjectEvents[i].localId == localId
+         && gObjectEvents[i].mapNum == mapNum
+         && gObjectEvents[i].mapGroup == mapGroup)
             return TRUE;
     }
-    if (i >= OBJECT_EVENTS_COUNT)
-        return TRUE;
-    *objectEventId = i;
-    for (; i < OBJECT_EVENTS_COUNT; i++)
+
+#if IS_HNS
+    if (sCoopPreferObjectEventId < OBJECT_EVENTS_COUNT
+     && !gObjectEvents[sCoopPreferObjectEventId].active)
     {
-        if (gObjectEvents[i].active && gObjectEvents[i].localId == localId && gObjectEvents[i].mapNum == mapNum && gObjectEvents[i].mapGroup == mapGroup)
-            return TRUE;
+        *objectEventId = sCoopPreferObjectEventId;
+        sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
+        return FALSE;
     }
-    return FALSE;
+    sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
+#endif
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+#if IS_HNS
+        if (Coop_IsReservedPresenceObjectEventId(i))
+            continue;
+#endif
+        if (!gObjectEvents[i].active)
+        {
+            *objectEventId = i;
+            return FALSE;
+        }
+    }
+    return TRUE;
 }
 
 void RemoveObjectEvent(struct ObjectEvent *objectEvent)
 {
+#if IS_HNS
+    // Cutscene hide/reload, OOB culls, and map wipes must not evict the
+    // reserved co-op partner / remote-follower slots. The CB1 watchdog
+    // ForceClears + re-spawns when needed.
+    if (Coop_IsReservedPresenceObjectEventId((u8)(objectEvent - gObjectEvents)))
+        return;
+#endif
     objectEvent->active = FALSE;
     RemoveObjectEventInternal(objectEvent);
     // zero potential species info
@@ -3200,7 +3252,11 @@ void RemoveObjectEventsOutsideView(void)
             // such as Wally's Ralts catch sequence
             if (objectEvent->active && !objectEvent->isPlayer && objectEvent->localId != OBJ_EVENT_ID_FOLLOWER
              && objectEvent->localId != OBJ_EVENT_ID_NPC_FOLLOWER
-             && objectEvent->localId != OBJ_EVENT_ID_REMOTE_FOLLOWER)
+             && objectEvent->localId != OBJ_EVENT_ID_REMOTE_FOLLOWER
+#if IS_HNS
+             && !Coop_IsReservedPresenceObjectEventId(i)
+#endif
+            )
                 RemoveObjectEventIfOutsideView(objectEvent);
         }
     }
@@ -3515,7 +3571,15 @@ void SetObjectInvisibility(u8 localId, u8 mapNum, u8 mapGroup, bool8 invisible)
     u8 objectEventId;
 
     if (!TryGetObjectEventIdByLocalIdAndMap(localId, mapNum, mapGroup, &objectEventId))
+    {
+#if IS_HNS
+        if (invisible
+         && (Coop_IsReservedPresenceObjectEventId(objectEventId)
+          || localId == OBJ_EVENT_ID_REMOTE_FOLLOWER))
+            return;
+#endif
         gObjectEvents[objectEventId].invisible = invisible;
+    }
 }
 
 void ObjectEventGetLocalIdAndMap(struct ObjectEvent *objectEvent, void *localId, void *mapNum, void *mapGroup)

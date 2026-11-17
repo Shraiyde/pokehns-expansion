@@ -2924,6 +2924,37 @@ bool8 Coop_IsPeerVisible(void)
         && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
 }
 
+#define COOP_PRESENCE_OBJ_EVENT_ID          (OBJECT_EVENTS_COUNT - 1)
+#define COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID   (OBJECT_EVENTS_COUNT - 2)
+
+u8 Coop_GetReservedPresenceObjectEventId(void)
+{
+    return COOP_PRESENCE_OBJ_EVENT_ID;
+}
+
+u8 Coop_GetReservedRemoteFollowerObjectEventId(void)
+{
+    return COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID;
+}
+
+bool8 Coop_IsReservedPresenceObjectEventId(u8 objectEventId)
+{
+    return objectEventId == COOP_PRESENCE_OBJ_EVENT_ID
+        || objectEventId == COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID;
+}
+
+static void Coop_ForceClearObjectEventSlot(u8 objectEventId)
+{
+    struct ObjectEvent *obj;
+
+    if (objectEventId >= OBJECT_EVENTS_COUNT)
+        return;
+    obj = &gObjectEvents[objectEventId];
+    if (obj->spriteId < MAX_SPRITES && gSprites[obj->spriteId].inUse)
+        DestroySprite(&gSprites[obj->spriteId]);
+    memset(obj, 0, sizeof(*obj));
+}
+
 #define COOP_PRESENCE_LINK_ID 1
 #define COOP_STEP_QUEUE_SIZE 24
 #define COOP_PRESENCE_SNAP_TILES 8
@@ -3027,60 +3058,11 @@ static void Coop_ForcePresenceStep(struct ObjectEvent *obj, u8 facing)
     ObjectEventUpdateElevation(obj, NULL);
 }
 
-// Outdoors can fill all 16 object slots; steal the farthest non-critical NPC
-// so the partner avatar can always spawn.
-static bool8 Coop_IsProtectedObjectEvent(struct ObjectEvent *obj)
-{
-    u8 i;
-
-    if (!obj->active)
-        return TRUE;
-    if (obj->localId == OBJ_EVENT_ID_PLAYER || obj->localId == OBJ_EVENT_ID_CAMERA
-     || obj->localId == OBJ_EVENT_ID_FOLLOWER || obj->localId == OBJ_EVENT_ID_REMOTE_FOLLOWER)
-        return TRUE;
-    for (i = 0; i < MAX_LINK_PLAYERS; i++)
-    {
-        if (gLinkPlayerObjectEvents[i].active
-         && gLinkPlayerObjectEvents[i].objEventId == (u8)(obj - gObjectEvents))
-            return TRUE;
-    }
-    return FALSE;
-}
-
 static void Coop_EnsurePresenceObjectSlot(void)
 {
-    u8 id = GetFirstInactiveObjectEventId();
-    s16 px, py;
-    u8 best = OBJECT_EVENTS_COUNT;
-    u32 bestDist = 0;
-    u8 i;
-
-    if (id < OBJECT_EVENTS_COUNT)
-        return;
-
-    px = gObjectEvents[gPlayerAvatar.objectEventId].currentCoords.x;
-    py = gObjectEvents[gPlayerAvatar.objectEventId].currentCoords.y;
-    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
-    {
-        struct ObjectEvent *obj = &gObjectEvents[i];
-        s16 dx, dy;
-        u32 dist;
-
-        if (Coop_IsProtectedObjectEvent(obj))
-            continue;
-        dx = obj->currentCoords.x - px;
-        dy = obj->currentCoords.y - py;
-        if (dx < 0) dx = -dx;
-        if (dy < 0) dy = -dy;
-        dist = (u32)dx + (u32)dy;
-        if (dist >= bestDist)
-        {
-            bestDist = dist;
-            best = i;
-        }
-    }
-    if (best < OBJECT_EVENTS_COUNT)
-        RemoveObjectEvent(&gObjectEvents[best]);
+    // Always own the reserved high slot so map NPCs / cutscenes cannot
+    // permanently steal the partner's object-event id.
+    Coop_ForceClearObjectEventSlot(COOP_PRESENCE_OBJ_EVENT_ID);
 }
 
 static void Coop_UpdateRemotePresence(void)
@@ -3102,17 +3084,28 @@ static void Coop_UpdateRemotePresence(void)
             DestroyLinkPlayerObject(i);
     }
 
-    // Return-to-field rebuilds map sprites but skips link-player slots, leaving
-    // an active link entry with a destroyed sprite. Treat that as gone.
+    // Every-frame watchdog: same-map peer must always have a live, visible
+    // avatar. Cutscenes, fades, bag/menu returns, and object reloads can leave
+    // an active link entry with a dead/hidden sprite — treat that as gone and
+    // re-spawn immediately in this same CB1 tick.
     if (remote->active)
     {
         struct ObjectEvent *obj = &gObjectEvents[remote->objEventId];
-        if (!obj->active
-         || obj->spriteId >= MAX_SPRITES
-         || !gSprites[obj->spriteId].inUse)
+        bool8 slotWrong = (remote->objEventId != COOP_PRESENCE_OBJ_EVENT_ID);
+        bool8 dead = !obj->active
+            || obj->spriteId >= MAX_SPRITES
+            || !gSprites[obj->spriteId].inUse;
+        bool8 hidden = !dead && gSprites[obj->spriteId].invisible;
+
+        if (slotWrong || dead)
         {
             DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
             Coop_ClearPresenceStepQueue();
+        }
+        else if ((hidden || obj->invisible) && Coop_IsPeerVisible())
+        {
+            obj->invisible = FALSE;
+            gSprites[obj->spriteId].invisible = FALSE;
         }
     }
 
@@ -3137,6 +3130,12 @@ static void Coop_UpdateRemotePresence(void)
             if (gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID].active)
             {
                 CreateLinkPlayerSprite(COOP_PRESENCE_LINK_ID, 0);
+                {
+                    struct ObjectEvent *spawned = &gObjectEvents[COOP_PRESENCE_OBJ_EVENT_ID];
+                    spawned->invisible = FALSE;
+                    if (spawned->spriteId < MAX_SPRITES)
+                        gSprites[spawned->spriteId].invisible = FALSE;
+                }
                 Coop_ClearPresenceStepQueue();
                 sCoopQueuedTipX = spawnX;
                 sCoopQueuedTipY = spawnY;
@@ -3192,18 +3191,20 @@ static void Coop_SnapRemoteLinkPlayers(void)
         obj = &gObjectEvents[linkPlayer->objEventId];
         if (!obj->active)
             continue;
-        if (linkActive && !sameMap)
+        if (!sameMap)
         {
             // Different map: hide the peer's avatar instead of leaving it
             // standing where it spawned on this map. The object keeps
             // existing (so the link protocol is untouched) and comes back
             // the moment the maps match again.
+            obj->invisible = TRUE;
             if (obj->spriteId != MAX_SPRITES)
                 gSprites[obj->spriteId].invisible = TRUE;
             Coop_ClearPresenceStepQueue();
             continue;
         }
-        if (linkActive && obj->spriteId != MAX_SPRITES)
+        obj->invisible = FALSE;
+        if (obj->spriteId != MAX_SPRITES)
             gSprites[obj->spriteId].invisible = FALSE;
 
         // Presence and same-map link: drive the avatar from an authoritative
@@ -3290,6 +3291,8 @@ static void Coop_DestroyRemoteFollower(void)
 
     if (follower != NULL)
         RemoveObjectEvent(follower);
+    // Ensure the reserved follower slot is empty for the next spawn.
+    Coop_ForceClearObjectEventSlot(COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID);
 }
 
 static struct ObjectEvent *Coop_GetRemotePartnerObject(void)
@@ -3379,11 +3382,19 @@ static void Coop_UpdateRemoteFollower(void)
     MoveCoords(GetOppositeDirection(facing), &targetX, &targetY);
 
     follower = Coop_GetRemoteFollowerObject();
-    if (follower != NULL && follower->graphicsId != graphicsId)
+    if (follower != NULL)
     {
-        // Graphics changed: respawn so dynamic mon palettes reload cleanly.
-        Coop_DestroyRemoteFollower();
-        follower = NULL;
+        bool8 dead = follower->spriteId >= MAX_SPRITES
+            || !gSprites[follower->spriteId].inUse;
+        bool8 wrongSlot = ((u8)(follower - gObjectEvents) != COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID);
+
+        if (dead || wrongSlot || follower->graphicsId != graphicsId)
+        {
+            // Dead/hidden after menu/battle/cutscene, wrong slot, or gfx change:
+            // destroy and re-spawn into the reserved slot this frame.
+            Coop_DestroyRemoteFollower();
+            follower = NULL;
+        }
     }
 
     if (follower == NULL)
@@ -3400,14 +3411,20 @@ static void Coop_UpdateRemoteFollower(void)
             .movementType = MOVEMENT_TYPE_FACE_DOWN,
         };
 
+        Coop_ForceClearObjectEventSlot(COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID);
+        Coop_PreferObjectEventSlot(COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID);
         objId = SpawnSpecialObjectEvent(&template);
         if (objId >= OBJECT_EVENTS_COUNT)
             return;
         follower = &gObjectEvents[objId];
         ObjectEventTurn(follower, facing);
+        if (follower->spriteId < MAX_SPRITES)
+            gSprites[follower->spriteId].invisible = FALSE;
         return;
     }
 
+    if (follower->spriteId < MAX_SPRITES)
+        gSprites[follower->spriteId].invisible = FALSE;
     ObjectEventClearHeldMovementIfFinished(follower);
     dx = targetX - follower->currentCoords.x;
     dy = targetY - follower->currentCoords.y;
@@ -5304,16 +5321,29 @@ static void ZeroObjectEvent(struct ObjectEvent *objEvent)
 
 static void SpawnLinkPlayerObjectEvent(u8 linkPlayerId, s16 x, s16 y, u8 gender)
 {
-    u8 objEventId = GetFirstInactiveObjectEventId();
+    u8 objEventId;
     struct LinkPlayerObjectEvent *linkPlayerObjEvent;
     struct ObjectEvent *objEvent;
 
-    // GetFirstInactiveObjectEventId returns OBJECT_EVENTS_COUNT when every
-    // slot is taken. Spawning then would write past gObjectEvents and
-    // corrupt the table. Bail out instead; the presence update retries next
-    // frame once a slot frees up.
-    if (objEventId >= OBJECT_EVENTS_COUNT)
-        return;
+#if IS_HNS
+    // Presence partner always claims the reserved high slot so outdoor NPC
+    // density and cutscene reloads cannot leave us without a free id.
+    if (linkPlayerId == COOP_PRESENCE_LINK_ID && !IsOverworldLinkActive())
+    {
+        objEventId = COOP_PRESENCE_OBJ_EVENT_ID;
+        Coop_ForceClearObjectEventSlot(objEventId);
+    }
+    else
+#endif
+    {
+        objEventId = GetFirstInactiveObjectEventId();
+        // GetFirstInactiveObjectEventId returns OBJECT_EVENTS_COUNT when every
+        // slot is taken. Spawning then would write past gObjectEvents and
+        // corrupt the table. Bail out instead; the presence update retries next
+        // frame once a slot frees up.
+        if (objEventId >= OBJECT_EVENTS_COUNT)
+            return;
+    }
     linkPlayerObjEvent = &gLinkPlayerObjectEvents[linkPlayerId];
     objEvent = &gObjectEvents[objEventId];
 
