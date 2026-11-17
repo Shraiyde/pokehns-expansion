@@ -188,7 +188,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 12
+#define HNS_COOP_MAILBOX_VERSION 13
 #define HNS_COOP_CONFIG_BLOB_SIZE 44
 // localFollower / remoteFollower packing (u32):
 //   bit 31     = visible (0 → treat as no follower / hide)
@@ -255,13 +255,16 @@ struct HnsCoopMailbox
     volatile u8 remoteConfigBlob[HNS_COOP_CONFIG_BLOB_SIZE];
     // Appended in mailbox v12 — do not reorder earlier fields (Android config
     // blob offsets stay valid). Offsets: localFollower @ 2284, remoteFollower
-    // @ 2288; sizeof == 2292.
+    // @ 2288.
     volatile u32 localFollower;   // packed graphics + visible; written by ROM
     volatile u32 remoteFollower;  // peer's localFollower; written by Android
+    // v13: ROM increments on return-to-field so Android forces POSITION republish
+    // and asks the peer for a fresh presence snapshot. Offset 2292; sizeof 2296.
+    volatile u32 localPresenceResync;
 };
 
 STATIC_ASSERT((sizeof(struct ChallengeSettings) <= HNS_COOP_CONFIG_BLOB_SIZE - 4), CoopChallengeSettingsFitsBlob);
-STATIC_ASSERT((sizeof(struct HnsCoopMailbox) == 2292), HnsCoopMailboxV12Size);
+STATIC_ASSERT((sizeof(struct HnsCoopMailbox) == 2296), HnsCoopMailboxV13Size);
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
 // mailbox header at runtime instead of using a nonzero static initializer.
@@ -957,6 +960,7 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.remoteY = 0;
     gHnsCoopMailbox.localFollower = 0;
     gHnsCoopMailbox.remoteFollower = 0;
+    gHnsCoopMailbox.localPresenceResync = 0;
     sCoopInitialFlagCursor = HNS_HIDE_POKEMON_START;
     sCoopInitialVarCursor = 0;
     sCoopInitialHidePokemonStarted = FALSE;
@@ -3098,6 +3102,20 @@ static void Coop_UpdateRemotePresence(void)
             DestroyLinkPlayerObject(i);
     }
 
+    // Return-to-field rebuilds map sprites but skips link-player slots, leaving
+    // an active link entry with a destroyed sprite. Treat that as gone.
+    if (remote->active)
+    {
+        struct ObjectEvent *obj = &gObjectEvents[remote->objEventId];
+        if (!obj->active
+         || obj->spriteId >= MAX_SPRITES
+         || !gSprites[obj->spriteId].inUse)
+        {
+            DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
+            Coop_ClearPresenceStepQueue();
+        }
+    }
+
     if (Coop_IsPeerVisible())
     {
         if (!remote->active)
@@ -4490,11 +4508,44 @@ static void InitObjectEventsLocal(void)
     FollowerNPC_HandleSprite();
     UpdateFollowingPokemon();
     TryRunOnWarpIntoMapScript();
+#if IS_HNS
+    // Warps/cutscenes wipe link players via ResetObjectEvents; still ask Android
+    // for a fresh mutual POSITION exchange as soon as the field is up.
+    Coop_ClearPresenceStepQueue();
+    gHnsCoopMailbox.localPresenceResync++;
+#endif
 }
+
+#if IS_HNS
+static void Coop_InvalidatePresenceAfterFieldReload(void)
+{
+    u8 i;
+
+    // Full SIO link owns link-player objects via SpawnLinkPlayers.
+    if (IsOverworldLinkActive())
+        return;
+
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        if (gLinkPlayerObjectEvents[i].active)
+            DestroyLinkPlayerObject(i);
+    }
+    Coop_DestroyRemoteFollower();
+    Coop_ClearPresenceStepQueue();
+    // Ask Android to force-publish our POSITION and request the peer's.
+    gHnsCoopMailbox.localPresenceResync++;
+}
+#endif
 
 static void InitObjectEventsReturnToField(void)
 {
     SpawnObjectEventsOnReturnToField(0, 0);
+#if IS_HNS
+    // SpawnObjectEventsOnReturnToField skips link-player sprites, so the co-op
+    // presence avatar would stay invisible after battles/menus. Drop it here;
+    // CB1 Coop_UpdateRemotePresence respawns immediately with a fresh sprite.
+    Coop_InvalidatePresenceAfterFieldReload();
+#endif
     RotatingGate_InitPuzzleAndGraphics();
     RunOnReturnToFieldMapScript();
 }

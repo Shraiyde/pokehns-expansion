@@ -62,3 +62,16 @@ OW uses the same large-desync snap threshold while tracking the partner avatar.
 - `MAP_OFFSET` (7) is already included in published `currentCoords`; Android
   relays those words unchanged.
 - No dead-reckoning / extrapolation remains on the receiver after this change.
+
+## Return-to-field invisibility (battle / menu)
+
+`SpawnObjectEventsOnReturnToField` recreates sprites for map objects but
+**skips link-player slots**. After a wild/trainer battle (or start menu), the
+presence `gLinkPlayerObjectEvents` entry stayed `active` while its sprite was
+destroyed — `Coop_UpdateRemotePresence` thought the partner was still spawned
+and never recreated them.
+
+Fix: invalidate presence link players (+ remote follower) in
+`InitObjectEventsReturnToField`, validate sprite `inUse` before trusting an
+active entry, and bump `localPresenceResync` so Android forces a POSITION
+exchange.

@@ -35,6 +35,20 @@ Special object `OBJ_EVENT_ID_REMOTE_FOLLOWER` (`0xFC`). Same-map only
 (`Coop_IsPeerVisible`). Walk/snap like `Coop_SnapRemoteLinkPlayers`; destroyed
 on hide, map change, or disconnect.
 
+
+## v13 (presence field-return resync)
+
+| Field | Offset | Size | Writer | Notes |
+| --- | --- | --- | --- | --- |
+| `localPresenceResync` | 2292 | 4 | ROM | Monotonic counter; bumped on return-to-field / warp |
+| **sizeof** | — | **2296** | — | was 2292 in v12 |
+
+`HNS_COOP_MAILBOX_VERSION` = **13**. Android watches this counter: on change it
+force-publishes local POSITION and asks the peer to republish (`POSITION_RESYNC`).
+
+Return-to-field previously skipped link-player sprite rebuild, leaving the partner
+avatar invisible after battles/menus; ROM now invalidates and respawns presence.
+
 ## Presence movement
 
 See [`docs/coop-presence-movement.md`](coop-presence-movement.md) for outdoor

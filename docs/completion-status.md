@@ -134,7 +134,7 @@ Do not share personal inventory, party, or money.
 | Constant | Value | Where |
 | --- | --- | --- |
 | `HNS_COOP_MAILBOX_MAGIC` | `0x504F4F43` (`COOP`) | `src/overworld.c` |
-| `HNS_COOP_MAILBOX_VERSION` | `12` (`localFollower` @ 2284, `remoteFollower` @ 2288, sizeof 2292) | `src/overworld.c` |
+| `HNS_COOP_MAILBOX_VERSION` | `13` (`localFollower` @ 2284, `remoteFollower` @ 2288, `localPresenceResync` @ 2292, sizeof 2296) | `src/overworld.c` |
 | `HNS_COOP_CONFIG_BLOB_SIZE` | `44` | `src/overworld.c` |
 | `HNS_COOP_FLAG_QUEUE_SIZE` | `128` | `src/overworld.c` |
 | `HNS_COOP_VAR_QUEUE_SIZE` | `128` | `src/overworld.c` |
