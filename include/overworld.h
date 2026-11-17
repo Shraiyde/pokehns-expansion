@@ -209,6 +209,7 @@ bool8 Coop_IsReservedPresenceObjectEventId(u8 objectEventId);
 u8 Coop_GetReservedPresenceObjectEventId(void);
 u8 Coop_GetReservedRemoteFollowerObjectEventId(void);
 void Coop_PreferObjectEventSlot(u8 objectEventId);
+u8 Coop_TakePreferredObjectEventId(void);
 #endif
 
 // Item Description Headers

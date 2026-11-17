@@ -1514,29 +1514,17 @@ static void CreateReflectionEffectSprites(void)
     gSprites[spriteId].invisible = TRUE;
 }
 
-#if IS_HNS
-// When set, GetAvailableObjectEventId / GetFirstInactiveObjectEventId return
-// this slot next (used to place the co-op remote follower in its reserved id).
-static u8 sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
-
-void Coop_PreferObjectEventSlot(u8 objectEventId)
-{
-    sCoopPreferObjectEventId = objectEventId;
-}
-#endif
-
 u8 GetFirstInactiveObjectEventId(void)
 {
     u8 i;
 #if IS_HNS
-    if (sCoopPreferObjectEventId < OBJECT_EVENTS_COUNT
-     && !gObjectEvents[sCoopPreferObjectEventId].active)
     {
-        i = sCoopPreferObjectEventId;
-        sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
-        return i;
+        // Prefer-slot lives in overworld.c (EWRAM) — a file-local .data static
+        // here was GC-discarded at link ("discarded section .data").
+        u8 prefer = Coop_TakePreferredObjectEventId();
+        if (prefer < OBJECT_EVENTS_COUNT)
+            return prefer;
     }
-    sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
 #endif
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
@@ -1816,14 +1804,14 @@ static bool8 GetAvailableObjectEventId(u16 localId, u8 mapNum, u8 mapGroup, u8 *
     }
 
 #if IS_HNS
-    if (sCoopPreferObjectEventId < OBJECT_EVENTS_COUNT
-     && !gObjectEvents[sCoopPreferObjectEventId].active)
     {
-        *objectEventId = sCoopPreferObjectEventId;
-        sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
-        return FALSE;
+        u8 prefer = Coop_TakePreferredObjectEventId();
+        if (prefer < OBJECT_EVENTS_COUNT)
+        {
+            *objectEventId = prefer;
+            return FALSE;
+        }
     }
-    sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
 #endif
 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)

@@ -2943,6 +2943,26 @@ bool8 Coop_IsReservedPresenceObjectEventId(u8 objectEventId)
         || objectEventId == COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID;
 }
 
+// Kept in overworld.c (not event_object_movement.o .data) so --gc-sections
+// cannot discard the prefer slot while GetFirstInactive still references it.
+// EWRAM starts zeroed; Take validates !active so a stale 0 is harmless.
+EWRAM_DATA static u8 sCoopPreferObjectEventId;
+
+void Coop_PreferObjectEventSlot(u8 objectEventId)
+{
+    sCoopPreferObjectEventId = objectEventId;
+}
+
+u8 Coop_TakePreferredObjectEventId(void)
+{
+    u8 id = sCoopPreferObjectEventId;
+
+    sCoopPreferObjectEventId = OBJECT_EVENTS_COUNT;
+    if (id < OBJECT_EVENTS_COUNT && !gObjectEvents[id].active)
+        return id;
+    return OBJECT_EVENTS_COUNT;
+}
+
 static void Coop_ForceClearObjectEventSlot(u8 objectEventId)
 {
     struct ObjectEvent *obj;
