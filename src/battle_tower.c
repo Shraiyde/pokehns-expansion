@@ -1653,7 +1653,13 @@ static void LoadLinkMultiOpponentsData(void)
             TRAINER_BATTLE_PARAM.opponentB = gSaveBlock2Ptr->frontier.trainerIds[battleNum * 2 + 1];
             SetBattleFacilityTrainerGfxId(TRAINER_BATTLE_PARAM.opponentA, 0);
             SetBattleFacilityTrainerGfxId(TRAINER_BATTLE_PARAM.opponentB, 1);
-            if (gReceivedRemoteLinkPlayers && gWirelessCommType == 0)
+            // Co-op keeps a persistent OpenLink session (LINKTYPE_COOP). Never
+            // tear it down after exchanging Tower Link Multi opponent IDs.
+            if (gReceivedRemoteLinkPlayers && gWirelessCommType == 0
+#if IS_HNS
+                && gLinkType != LINKTYPE_COOP
+#endif
+                )
                 gSpecialVar_Result = 4;
             else
                 gSpecialVar_Result = 6;
@@ -1676,6 +1682,11 @@ static void LoadLinkMultiOpponentsData(void)
 
 static void TowerTryCloseLink(void)
 {
+#if IS_HNS
+    // Persistent co-op SIO must survive leaving a Tower Link Multi room.
+    if (gLinkType == LINKTYPE_COOP || IsCoopLinkActive())
+        return;
+#endif
     if (gWirelessCommType != 0)
         SetCloseLinkCallback();
 }

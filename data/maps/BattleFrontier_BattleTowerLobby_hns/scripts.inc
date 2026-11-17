@@ -39,6 +39,7 @@ BattleFrontier_BattleTowerLobby_OnFrame_hns:
 	map_script_2 VAR_TEMP_CHALLENGE_STATUS, CHALLENGE_STATUS_PAUSED, BattleFrontier_BattleTowerLobby_EventScript_ResumeChallenge_hns
 	map_script_2 VAR_TEMP_CHALLENGE_STATUS, CHALLENGE_STATUS_WON, BattleFrontier_BattleTowerLobby_EventScript_WonChallenge_hns
 	map_script_2 VAR_TEMP_CHALLENGE_STATUS, CHALLENGE_STATUS_LOST, BattleFrontier_BattleTowerLobby_EventScript_LostChallenge_hns
+	map_script_2 VAR_TEMP_2, 0, BattleFrontier_BattleTowerLobby_EventScript_TryJoinCoopLinkMulti_hns
 	.2byte 0
 
 BattleFrontier_BattleTowerLobby_EventScript_GetChallengeStatus_hns::
@@ -87,6 +88,7 @@ BattleFrontier_BattleTowerLobby_EventScript_GiveBattlePoints_hns::
 BattleFrontier_BattleTowerLobby_EventScript_LookForwardToChallenge_hns::
 	msgbox BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns, MSGBOX_DEFAULT
 	closemessage
+	call BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns
 	setvar VAR_TEMP_CHALLENGE_STATUS, 255
 	callnative UpdateFollowingPokemon
 	release
@@ -107,6 +109,7 @@ BattleFrontier_BattleTowerLobby_EventScript_LostThanksForPlaying_hns::
 	call BattleFrontier_BattleTowerLobby_EventScript_AskSaveBattle_hns
 	msgbox BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns, MSGBOX_DEFAULT
 	closemessage
+	call BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns
 	setvar VAR_TEMP_CHALLENGE_STATUS, 255
 	callnative UpdateFollowingPokemon
 	release
@@ -369,9 +372,9 @@ BattleFrontier_BattleTowerLobby_EventScript_LinkMultisAttendant_hns::
 	lock
 	faceplayer
 	setvar VAR_FRONTIER_FACILITY, FRONTIER_FACILITY_TOWER
-	@ Heart & Soul co-op uses the mailbox link, not wireless/cable Battle Tower
-	@ multi. When a co-op partner is present, send them to NPC Multi (real play)
-	@ or explain that field co-op already covers human tag battles.
+	@ Heart & Soul co-op Link Multi: partner on this lobby map → invite via
+	@ shared flags and enter as a co-op doubles team. Partner away → honest
+	@ message. No co-op → classic wireless/cable Link Multi.
 	specialvar VAR_RESULT, Script_CoopArePlayersOnSameMap
 	goto_if_eq VAR_RESULT, TRUE, BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerHere_hns
 	specialvar VAR_RESULT, Script_IsCoopLinkActive
@@ -389,8 +392,8 @@ BattleFrontier_BattleTowerLobby_EventScript_AskEnterLinkMultisChallenge_hns::
 	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge_hns
 
 BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerHere_hns::
-	msgbox BattleFrontier_BattleTowerLobby_Text_CoopPartnerHereUseMulti_hns, MSGBOX_YESNO
-	goto_if_eq VAR_RESULT, YES, BattleFrontier_BattleTowerLobby_EventScript_RedirectToMultisFromLink_hns
+	msgbox BattleFrontier_BattleTowerLobby_Text_CoopPartnerHereStartLinkMulti_hns, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, YES, BattleFrontier_BattleTowerLobby_EventScript_StartCoopLinkMultiAsHost_hns
 	msgbox BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns, MSGBOX_DEFAULT
 	release
 	end
@@ -400,11 +403,155 @@ BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerAway_hns::
 	release
 	end
 
-BattleFrontier_BattleTowerLobby_EventScript_RedirectToMultisFromLink_hns::
-	clearflag FLAG_CHOSEN_MULTI_BATTLE_NPC_PARTNER
+BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns::
+	clearflag FLAG_COOP_TOWER_LINK_MULTI_INVITE
+	clearflag FLAG_COOP_TOWER_LINK_MULTI_LVL_OPEN
+	clearflag FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY
+	setvar VAR_TEMP_2, 0
+	return
+
+BattleFrontier_BattleTowerLobby_EventScript_StartCoopLinkMultiAsHost_hns::
 	special SavePlayerParty
-	msgbox BattleFrontier_BattleTowerLobby_Text_WelcomeMultiBattle_hns, MSGBOX_DEFAULT
-	goto BattleFrontier_BattleTowerLobby_EventScript_AskEnterMultisChallenge_hns
+	setvar VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_LINK_MULTIS
+	message BattleFrontier_BattleTowerLobby_Text_WhichLevelMode_hns
+	waitmessage
+	multichoice 17, 6, MULTI_LEVEL_MODE, FALSE
+	switch VAR_RESULT
+	case FRONTIER_LVL_TENT, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMulti_hns
+	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMulti_hns
+	frontier_checkineligible
+	goto_if_eq VAR_0x8004, TRUE, BattleFrontier_BattleTowerLobby_EventScript_NotEnoughValidMons_hnsCoopLink_hns
+	copyvar VAR_TEMP_3, VAR_RESULT
+	frontier_set FRONTIER_DATA_LVL_MODE, VAR_TEMP_3
+	call BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns
+	setflag FLAG_COOP_TOWER_LINK_MULTI_INVITE
+	goto_if_eq VAR_TEMP_3, FRONTIER_LVL_OPEN, BattleFrontier_BattleTowerLobby_EventScript_CoopLinkMultiSetOpenLvl_hns
+	goto BattleFrontier_BattleTowerLobby_EventScript_CoopLinkMultiSelectParty_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_CoopLinkMultiSetOpenLvl_hns::
+	setflag FLAG_COOP_TOWER_LINK_MULTI_LVL_OPEN
+BattleFrontier_BattleTowerLobby_EventScript_CoopLinkMultiSelectParty_hns::
+	msgbox BattleFrontier_BattleTowerLobby_Text_PleaseSelectTwoMons_hns2_hns, MSGBOX_DEFAULT
+	fadescreen FADE_TO_BLACK
+	callnative RemoveFollowingPokemon
+	call BattleFrontier_EventScript_GetLvlMode_hns
+	copyvar VAR_0x8004, VAR_RESULT
+	setvar VAR_0x8005, FRONTIER_MULTI_PARTY_SIZE
+	special ChoosePartyForBattleFrontier
+	waitstate
+	goto_if_eq VAR_RESULT, 0, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiLoadParty_hns
+	msgbox BattleFrontier_BattleTowerLobby_Text_OkayToSaveBeforeEntering_hns, MSGBOX_YESNO
+	switch VAR_RESULT
+	case NO, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiLoadParty_hns
+	case YES, BattleFrontier_BattleTowerLobby_EventScript_SaveBeforeCoopLinkMulti_hns
+	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiLoadParty_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_SaveBeforeCoopLinkMulti_hns::
+	frontier_set FRONTIER_DATA_SELECTED_MON_ORDER
+	setvar VAR_TEMP_CHALLENGE_STATUS, 0
+	tower_init
+	tower_set TOWER_DATA_WIN_STREAK_ACTIVE, TRUE
+	frontier_set FRONTIER_DATA_PAUSED, FALSE
+	special LoadPlayerParty
+	closemessage
+	delay 2
+	call Common_EventScript_SaveGame
+	setvar VAR_TEMP_CHALLENGE_STATUS, 255
+	goto_if_eq VAR_RESULT, 0, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiSaveFailed_hns
+	incrementgamestat GAME_STAT_ENTERED_BATTLE_TOWER
+	msgbox BattleFrontier_BattleTowerLobby_Text_WaitingForCoopPartner_hns, MSGBOX_DEFAULT
+BattleFrontier_BattleTowerLobby_EventScript_WaitCoopPartnerReady_hns::
+	goto_if_unset FLAG_COOP_TOWER_LINK_MULTI_INVITE, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiPartnerGone_hns
+	specialvar VAR_RESULT, Script_IsCoopLinkActive
+	goto_if_eq VAR_RESULT, FALSE, BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiPartnerGone_hns
+	goto_if_set FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY, BattleFrontier_BattleTowerLobby_EventScript_EnterElevator_hns
+	delay 30
+	goto BattleFrontier_BattleTowerLobby_EventScript_WaitCoopPartnerReady_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_TryJoinCoopLinkMulti_hns::
+	@ Leave VAR_TEMP_2 at 0 while idle so a later invite still fires OnFrame.
+	goto_if_unset FLAG_COOP_TOWER_LINK_MULTI_INVITE, BattleFrontier_BattleTowerLobby_EventScript_EndJoinCoopLinkMulti_hns
+	goto_if_set FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY, BattleFrontier_BattleTowerLobby_EventScript_EndJoinCoopLinkMulti_hns
+	specialvar VAR_RESULT, Script_IsCoopLinkActive
+	goto_if_eq VAR_RESULT, FALSE, BattleFrontier_BattleTowerLobby_EventScript_EndJoinCoopLinkMulti_hns
+	specialvar VAR_RESULT, Script_CoopArePlayersOnSameMap
+	goto_if_eq VAR_RESULT, FALSE, BattleFrontier_BattleTowerLobby_EventScript_EndJoinCoopLinkMulti_hns
+	setvar VAR_TEMP_2, 1
+	lockall
+	msgbox BattleFrontier_BattleTowerLobby_Text_CoopPartnerInvitesLinkMulti_hns, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, NO, BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMulti_hns
+	setvar VAR_FRONTIER_FACILITY, FRONTIER_FACILITY_TOWER
+	setvar VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_LINK_MULTIS
+	goto_if_set FLAG_COOP_TOWER_LINK_MULTI_LVL_OPEN, BattleFrontier_BattleTowerLobby_EventScript_JoinCoopLinkMultiOpen_hns
+	setvar VAR_TEMP_3, FRONTIER_LVL_50
+	goto BattleFrontier_BattleTowerLobby_EventScript_JoinCoopLinkMultiAfterLvl_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_JoinCoopLinkMultiOpen_hns::
+	setvar VAR_TEMP_3, FRONTIER_LVL_OPEN
+BattleFrontier_BattleTowerLobby_EventScript_JoinCoopLinkMultiAfterLvl_hns::
+	frontier_set FRONTIER_DATA_LVL_MODE, VAR_TEMP_3
+	special SavePlayerParty
+	msgbox BattleFrontier_BattleTowerLobby_Text_PleaseSelectTwoMons_hns2_hns, MSGBOX_DEFAULT
+	fadescreen FADE_TO_BLACK
+	callnative RemoveFollowingPokemon
+	call BattleFrontier_EventScript_GetLvlMode_hns
+	copyvar VAR_0x8004, VAR_RESULT
+	setvar VAR_0x8005, FRONTIER_MULTI_PARTY_SIZE
+	special ChoosePartyForBattleFrontier
+	waitstate
+	goto_if_eq VAR_RESULT, 0, BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMulti_hns
+	msgbox BattleFrontier_BattleTowerLobby_Text_OkayToSaveBeforeEntering_hns, MSGBOX_YESNO
+	switch VAR_RESULT
+	case NO, BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMultiLoadParty_hns
+	case YES, BattleFrontier_BattleTowerLobby_EventScript_SaveBeforeJoinCoopLinkMulti_hns
+	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMultiLoadParty_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_SaveBeforeJoinCoopLinkMulti_hns::
+	frontier_set FRONTIER_DATA_SELECTED_MON_ORDER
+	setvar VAR_TEMP_CHALLENGE_STATUS, 0
+	tower_init
+	tower_set TOWER_DATA_WIN_STREAK_ACTIVE, TRUE
+	frontier_set FRONTIER_DATA_PAUSED, FALSE
+	special LoadPlayerParty
+	closemessage
+	delay 2
+	call Common_EventScript_SaveGame
+	setvar VAR_TEMP_CHALLENGE_STATUS, 255
+	goto_if_eq VAR_RESULT, 0, BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMultiLoadParty_hns
+	incrementgamestat GAME_STAT_ENTERED_BATTLE_TOWER
+	setflag FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY
+	goto BattleFrontier_BattleTowerLobby_EventScript_EnterElevator_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMultiLoadParty_hns::
+	special LoadPlayerParty
+	callnative UpdateFollowingPokemon
+BattleFrontier_BattleTowerLobby_EventScript_DeclineCoopLinkMulti_hns::
+	call BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns
+	msgbox BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns, MSGBOX_DEFAULT
+	releaseall
+BattleFrontier_BattleTowerLobby_EventScript_EndJoinCoopLinkMulti_hns::
+	end
+
+BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiLoadParty_hns::
+	special LoadPlayerParty
+	callnative UpdateFollowingPokemon
+BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMulti_hns::
+	call BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns
+	msgbox BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns, MSGBOX_DEFAULT
+	release
+	end
+
+BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiSaveFailed_hns::
+	frontier_set FRONTIER_DATA_CHALLENGE_STATUS
+	goto BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMulti_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiPartnerGone_hns::
+	msgbox BattleFrontier_BattleTowerLobby_Text_CoopPartnerLeftLinkMulti_hns, MSGBOX_DEFAULT
+	goto BattleFrontier_BattleTowerLobby_EventScript_CancelCoopLinkMultiLoadParty_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_NotEnoughValidMons_hnsCoopLink_hns::
+	call BattleFrontier_BattleTowerLobby_EventScript_ClearCoopLinkMultiFlags_hns
+	goto BattleFrontier_BattleTowerLobby_EventScript_NotEnoughValidMons_hns
 
 BattleFrontier_BattleTowerLobby_EventScript_TryEnterLinkMultisChallenge_hns::
 	setvar VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_LINK_MULTIS
@@ -1089,15 +1236,26 @@ BattleFrontier_BattleTowerLobby_Text_MultiBattleRoomConstruction_hns:
 	.string "attendant at this desk to find a\l"
 	.string "partner and challenge the rooms.$"
 
-BattleFrontier_BattleTowerLobby_Text_CoopPartnerHereUseMulti_hns:
+BattleFrontier_BattleTowerLobby_Text_CoopPartnerHereStartLinkMulti_hns:
 	.string "Your co-op partner is right here!\p"
-	.string "Tower LINK MULTI still needs a classic\n"
-	.string "wireless or cable link, so for now\l"
-	.string "please use the MULTI BATTLE desk.\p"
-	.string "You'll pick a Tower partner in the\n"
-	.string "BATTLE SALON. Out in the field, you\l"
-	.string "two already tag-team trainers together.\p"
-	.string "Shall I send you to the MULTI desk?$"
+	.string "I can start a LINK MULTI challenge\n"
+	.string "for the two of you. Each of you picks\l"
+	.string "two POKéMON and you fight as a team\l"
+	.string "against the Tower trainers.\p"
+	.string "Shall we begin?$"
+
+BattleFrontier_BattleTowerLobby_Text_CoopPartnerInvitesLinkMulti_hns:
+	.string "Your co-op partner started a LINK\n"
+	.string "MULTI challenge!\p"
+	.string "Join them in the MULTI BATTLE ROOM?$"
+
+BattleFrontier_BattleTowerLobby_Text_WaitingForCoopPartner_hns:
+	.string "Waiting for your co-op partner to\n"
+	.string "select their POKéMON and join you...$"
+
+BattleFrontier_BattleTowerLobby_Text_CoopPartnerLeftLinkMulti_hns:
+	.string "Your co-op partner did not join.\n"
+	.string "The LINK MULTI challenge was canceled.$"
 
 BattleFrontier_BattleTowerLobby_Text_CoopPartnerAway_hns:
 	.string "LINK MULTI needs either a wireless /\n"

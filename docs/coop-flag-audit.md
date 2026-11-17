@@ -227,7 +227,8 @@ Haircuts, Bug Contest, Buena’s Password, flower shop berry, etc.
 | Berry trees | PER-PLAYER | Daily plant/pick counters + tree state are personal |
 | Bug Contest | PER-PLAYER / session | `VAR_BUG_CONTEST_STATE`, `FLAG_SYS_BUG_CONTEST_MODE`, daily completion |
 | Safari in-zone session | PER-PLAYER | Expansions already **SHARED** |
-| Battle Frontier / Tower records | PER-PLAYER | Lobby NPC hides shared via NPC_HIDE |
+| Battle Frontier / Tower records | PER-PLAYER | Win streaks / BP / symbols stay personal |
+| Battle Tower co-op Link Multi invite | **SHARED** (transient) | `FLAG_COOP_TOWER_LINK_MULTI_INVITE`, `FLAG_COOP_TOWER_LINK_MULTI_LVL_OPEN`, `FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY` — set+clear bidirectional; cleared on cancel / peer-drop / lobby return. Not story progress. |
 | Pokéathlon | PER-PLAYER | Music/assets only in tree; no shared story flags |
 | Ship / Magnet Train | **SHARED** | `VAR_SSAQUA_STATE`, `VAR_TRAIN` already in `sCoopSharedStoryVars` |
 | Roaming legendaries | PER-PLAYER | e.g. `FLAG_LATIOS_OR_LATIAS_ROAMING` |
@@ -344,6 +345,13 @@ has been applied.
 6. **Phone gift timing** — rematch **registration** shared; `FLAG_*_HAS_ITEM_HNS` / `VAR_*_ITEM_HNS` stay personal.
 7. **Alola second pass** — totem triggered/defeated + boat/flyover/Phantonomy mapsetup shared; totem/static/Tapu battle hides and `FLAG_BATTLED_*` Alolan form bookkeeping stay personal.
 8. **Second sweep** — berry/Bug Contest/Safari session/BF records/Pokéathlon/roamers classified PER-PLAYER; ship/train vars confirmed SHARED; rematch world state via trainer defeat + registration only.
+
+**Closed in Tower Link Multi co-op pass**
+
+9. **Tower Link Multi invite handshake** — three extended-content flags shared +
+   bidirectional clear so both phones warp into the multi room together without a
+   mailbox layout bump. Facility peer-drop uses `B_OUTCOME_PLAYER_TELEPORTED` /
+   party snapshot restore and does **not** set `CHALLENGE_STATUS_LOST`.
 
 ---
 

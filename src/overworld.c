@@ -450,6 +450,13 @@ static bool8 IsCoopIcePathBoulderFlag(u16 flagId)
 
 // Hide/show object flags that must mirror CLEARs on reconnect (not badges /
 // trainers / RECEIVED progress, which stay SET-only on initial sync).
+static bool8 IsCoopTowerLinkMultiFlag(u16 flagId)
+{
+    return flagId == FLAG_COOP_TOWER_LINK_MULTI_INVITE
+        || flagId == FLAG_COOP_TOWER_LINK_MULTI_LVL_OPEN
+        || flagId == FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY;
+}
+
 static bool8 IsCoopBidirectionalHideFlag(u16 flagId)
 {
     if (flagId >= HNS_NPC_HIDE_START
@@ -461,6 +468,10 @@ static bool8 IsCoopBidirectionalHideFlag(u16 flagId)
     if (IsCoopIcePathBoulderFlag(flagId))
         return TRUE;
     if (IsCoopSharedExtendedStoryHide(flagId))
+        return TRUE;
+    // Invite / ready / level-open must clear on both phones when a challenge
+    // cancels or a peer drops mid-Tower Link Multi.
+    if (IsCoopTowerLinkMultiFlag(flagId))
         return TRUE;
     return FALSE;
 }
@@ -555,6 +566,10 @@ static bool8 IsCoopSharedStoryFlag(u16 flagId)
         || flagId == FLAG_DEFEATED_PONI_TOTEM
         || flagId == FLAG_DEFEATED_AKALA_TOTEM
         || flagId == FLAG_DEFEATED_MELEMELE_TOTEM)
+        return TRUE;
+
+    // Battle Tower co-op Link Multi facility invite / ready handshake.
+    if (IsCoopTowerLinkMultiFlag(flagId))
         return TRUE;
 
     return flagId == FLAG_GOT_PASSWORD_FROM_ETO

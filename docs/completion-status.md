@@ -18,7 +18,9 @@ gate-officer dialogs on Cycling Road, and replaced an Indigo League
 
 Pass 3 closed remaining postgame polish: Battle Tower double/multi
 desks, challenge-menu comment hygiene, Safari Baoba expansion flavor,
-and NewSinjoh `scripts.pory` sync.
+and NewSinjoh `scripts.pory` sync. Pass 4 added Battle Tower human
+Link Multi facility warp-sync over co-op (shared invite flags; no
+mailbox version bump).
 
 Remaining gaps are non-story leftovers only.
 
@@ -41,7 +43,7 @@ Remaining gaps are non-story leftovers only.
 - [x] Map warp targets: every `dest_map` / connection resolves to an existing map id
 - [x] No undefined `FLAG_*` references from HnS scripts; key story vars advance through full ranges
 - [x] Cycling Road gate officers (Route 16 / Route 18) have talk scripts
-- [x] Battle Tower Singles / Doubles / Multi (NPC Salon partner) desks live; Link Multi desk wired with co-op-aware redirect
+- [x] Battle Tower Singles / Doubles / Multi (NPC Salon partner) desks live; Link Multi desk wired with co-op facility warp-sync
 - [x] Safari Baoba expansion engineer dialog (HnS flavor); Cianwood / Route 19 road-closed lines intentional
 
 ---
@@ -86,6 +88,12 @@ Remaining gaps are non-story leftovers only.
 | — | Safari expansion engineers generic stub text | Baoba crew flavor; engineers hide on `FLAG_SAFARI_ZONE_WEST_EXPANSION` |
 | — | `NewSinjoh_hns/scripts.pory` empty | Synced raw mirror of `scripts.inc` |
 
+### Pass 4 (Tower Link Multi co-op warp-sync)
+
+| Priority | Issue | Fix |
+| --- | --- | --- |
+| P3 | Battle Tower human Link Multi via co-op | Shared invite/ready/level flags (no mailbox bump); host + partner both enter LINK_MULTIS room; battles use co-op SIO doubles path; peer-drop → `B_OUTCOME_PLAYER_TELEPORTED`, party restore, no `CHALLENGE_STATUS_LOST` |
+
 ---
 
 ## 4. Remaining (non-story leftovers only)
@@ -96,7 +104,6 @@ Remaining gaps are non-story leftovers only.
 | New Bark Lab policeman `NULL` script | Cutscene-only (`FLAG_HIDE_LAB_POLICEMAN`) |
 | `TestMap1_hns` / `TestMap2_hns` still in tree | Unlinked from New Bark / Ecruteak; engine stress maps |
 | Emerald/FRLG leftover maps in repo | Outside HnS overworld progression |
-| Battle Tower human Link Multi via co-op mailbox | Needs facility warp-sync (too large this pass); Multi desk + field co-op tag battles cover play today. Link Multi desk already gives honest co-op redirect strings. |
 
 ### Intentional “under construction” flavor (not unfinished content)
 
@@ -110,15 +117,15 @@ Remaining gaps are non-story leftovers only.
 
 ## 5. Co-op notes
 
-Pass 3 added script specials only (`Script_IsCoopLinkActive`,
-`Script_CoopArePlayersOnSameMap`). No updates to
-`IsCoopSharedStoryFlag`, `sCoopSharedStoryVars`, or
-`docs/coop-flag-audit.md` were required.
+Pass 3 added script specials (`Script_IsCoopLinkActive`,
+`Script_CoopArePlayersOnSameMap`). Pass 4 added shared transient Tower
+Link Multi invite flags (see `docs/coop-flag-audit.md`). Mailbox layout
+unchanged (`HNS_COOP_MAILBOX_VERSION` still `11`).
 
 | Class | Examples |
 | --- | --- |
-| **SHARED** | Gym/badge flags, story hide/show, Rocket/quest flags, `FLAG_DEFEATED_RED`, `VAR_SINJOH_STORYLINE`, `VAR_ALOLA_STATE`, HMs / progress key items, `FLAG_SAFARI_ZONE_EAST/WEST_EXPANSION` |
-| **PER-PLAYER** | Legendaries/statics, gift ownership, normal item balls, phone gift pending flags |
+| **SHARED** | Gym/badge flags, story hide/show, Rocket/quest flags, `FLAG_DEFEATED_RED`, `VAR_SINJOH_STORYLINE`, `VAR_ALOLA_STATE`, HMs / progress key items, `FLAG_SAFARI_ZONE_EAST/WEST_EXPANSION`, Tower Link Multi invite/ready/level-open |
+| **PER-PLAYER** | Legendaries/statics, gift ownership, normal item balls, phone gift pending flags, Frontier win records |
 
 Do not share personal inventory, party, or money.
 
@@ -127,7 +134,7 @@ Do not share personal inventory, party, or money.
 | Constant | Value | Where |
 | --- | --- | --- |
 | `HNS_COOP_MAILBOX_MAGIC` | `0x504F4F43` (`COOP`) | `src/overworld.c` |
-| `HNS_COOP_MAILBOX_VERSION` | `11` | `src/overworld.c` |
+| `HNS_COOP_MAILBOX_VERSION` | `11` (unchanged; no new mailbox fields) | `src/overworld.c` |
 | `HNS_COOP_CONFIG_BLOB_SIZE` | `44` | `src/overworld.c` |
 | `HNS_COOP_FLAG_QUEUE_SIZE` | `128` | `src/overworld.c` |
 | `HNS_COOP_VAR_QUEUE_SIZE` | `128` | `src/overworld.c` |

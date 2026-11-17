@@ -10,9 +10,11 @@
 #include "battle_tower.h"
 #include "battle_transition.h"
 #include "event_data.h"
+#include "load_save.h"
 #include "pokemon.h"
 #include "frontier_util.h"
 #include "overworld.h"
+#include "random.h"
 #include "script.h"
 #include "string_util.h"
 #include "task.h"
@@ -20,6 +22,7 @@
 #include "constants/abilities.h"
 #include "constants/battle_frontier.h"
 #include "constants/battle_frontier_mons.h"
+#include "constants/flags.h"
 
 static void FillTrainerParty(u16 trainerId, u8 firstMonId, u8 monCount);
 
@@ -30,10 +33,36 @@ EWRAM_DATA const struct TrainerMon *gFacilityTrainerMons = NULL;
 // IWRAM common
 COMMON_DATA u16 gFrontierTempParty[MAX_FRONTIER_PARTY_SIZE] = {0};
 
+static void ClearCoopTowerLinkMultiFlags(void)
+{
+#if IS_HNS
+    FlagClear(FLAG_COOP_TOWER_LINK_MULTI_INVITE);
+    FlagClear(FLAG_COOP_TOWER_LINK_MULTI_LVL_OPEN);
+    FlagClear(FLAG_COOP_TOWER_LINK_MULTI_PARTNER_READY);
+#endif
+}
+
 static void HandleFacilityTrainerBattleEnd(void)
 {
     s32 i;
     u8 facility = gBattleScripting.specialTrainerBattleType;
+
+#if IS_HNS
+    // Peer-drop abort: restore the pre-challenge party snapshot from
+    // EnterElevator's SavePlayerParty, skip facility battle-count / forfeit
+    // bookkeeping, and let the room script treat B_OUTCOME_PLAYER_TELEPORTED
+    // as a clean abort (no CHALLENGE_STATUS_LOST / streak punishment).
+    if (Coop_DidPeerDropAbortBattle())
+    {
+        LoadPlayerParty();
+        Coop_ClearPeerDropAbortBattle();
+        ClearCoopTowerLinkMultiFlags();
+        FlagClear(FLAG_LIMIT_TO_50);
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        return;
+    }
+#endif
+
     switch (facility)
     {
     case FACILITY_BATTLE_TOWER:
@@ -120,6 +149,30 @@ static void DoFacilityTrainerBattleInternal(u8 facility)
             gBattleTypeFlags |= BATTLE_TYPE_DOUBLE | BATTLE_TYPE_INGAME_PARTNER | BATTLE_TYPE_MULTI | BATTLE_TYPE_TWO_OPPONENTS;
             break;
         case FRONTIER_MODE_LINK_MULTIS:
+#if IS_HNS
+            // Heart & Soul co-op: both humans control their own two Pokémon via
+            // the existing co-op SIO multi path. Do not use classic wireless /
+            // cable TOWER_LINK_MULTI layout, and do not re-SavePlayerParty here
+            // (EnterElevator already snapshotted the full party for peer-drop).
+            if (IsCoopLinkActive() && Coop_ArePlayersOnSameMap())
+            {
+                rng_value_t savedRng = gRngValue;
+                rng_value_t savedRng2 = gRng2Value;
+                u32 seed = 0x434F4F50
+                    ^ ((u32)TRAINER_BATTLE_PARAM.opponentA * 0x45D9F3B)
+                    ^ ((u32)TRAINER_BATTLE_PARAM.opponentB * 0x119DE1F3)
+                    ^ ((u32)gSaveBlock2Ptr->frontier.curChallengeBattleNum << 16);
+
+                SeedRng(seed);
+                SeedRng2(seed ^ 0x504F4F43);
+                FillFrontierTrainersParties(FRONTIER_MULTI_PARTY_SIZE);
+                gRngValue = savedRng;
+                gRng2Value = savedRng2;
+                gBattleTypeFlags |= BATTLE_TYPE_DOUBLE | BATTLE_TYPE_LINK
+                    | BATTLE_TYPE_MULTI | BATTLE_TYPE_TWO_OPPONENTS | BATTLE_TYPE_COOP;
+                break;
+            }
+#endif
             gBattleTypeFlags |= BATTLE_TYPE_DOUBLE | BATTLE_TYPE_LINK | BATTLE_TYPE_MULTI | BATTLE_TYPE_TOWER_LINK_MULTI;
             FillFrontierTrainersParties(FRONTIER_MULTI_PARTY_SIZE);
             break;
