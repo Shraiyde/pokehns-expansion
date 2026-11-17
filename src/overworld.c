@@ -188,8 +188,15 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 11
+#define HNS_COOP_MAILBOX_VERSION 12
 #define HNS_COOP_CONFIG_BLOB_SIZE 44
+// localFollower / remoteFollower packing (u32):
+//   bit 31     = visible (0 → treat as no follower / hide)
+//   bits 0-15  = graphicsId (species + OBJ_EVENT_MON [+ SHINY] [+ FEMALE])
+// Facing is not packed; remote render derives orientation from remoteFacing /
+// the partner avatar. Publish 0 when there is no visible local follower.
+#define HNS_COOP_FOLLOWER_VISIBLE (1u << 31)
+#define HNS_COOP_FOLLOWER_GFX_MASK 0xFFFFu
 
 // Note: Emerald reuses the direction and range variables during Link mode
 // as special gender and direction values. The types and placement
@@ -246,9 +253,15 @@ struct HnsCoopMailbox
     volatile u32 peerLinkReady;
     volatile u8 localConfigBlob[HNS_COOP_CONFIG_BLOB_SIZE];
     volatile u8 remoteConfigBlob[HNS_COOP_CONFIG_BLOB_SIZE];
+    // Appended in mailbox v12 — do not reorder earlier fields (Android config
+    // blob offsets stay valid). Offsets: localFollower @ 2284, remoteFollower
+    // @ 2288; sizeof == 2292.
+    volatile u32 localFollower;   // packed graphics + visible; written by ROM
+    volatile u32 remoteFollower;  // peer's localFollower; written by Android
 };
 
 STATIC_ASSERT((sizeof(struct ChallengeSettings) <= HNS_COOP_CONFIG_BLOB_SIZE - 4), CoopChallengeSettingsFitsBlob);
+STATIC_ASSERT((sizeof(struct HnsCoopMailbox) == 2292), HnsCoopMailboxV12Size);
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
 // mailbox header at runtime instead of using a nonzero static initializer.
@@ -942,6 +955,8 @@ static void Coop_ResetStorySyncQueues(void)
     gHnsCoopMailbox.remoteSioActive = 0;
     gHnsCoopMailbox.remoteX = 0;
     gHnsCoopMailbox.remoteY = 0;
+    gHnsCoopMailbox.localFollower = 0;
+    gHnsCoopMailbox.remoteFollower = 0;
     sCoopInitialFlagCursor = HNS_HIDE_POKEMON_START;
     sCoopInitialVarCursor = 0;
     sCoopInitialHidePokemonStarted = FALSE;
@@ -2830,6 +2845,26 @@ void Coop_SetSioActive(bool8 active)
     gHnsCoopMailbox.localSioActive = active;
 }
 
+static u32 Coop_PackLocalFollower(void)
+{
+    struct ObjectEvent *follower;
+
+#if !OW_FOLLOWERS_ENABLED
+    return 0;
+#else
+    // Mirror local hide rules: ball / surf / bike / forced-movement tiles and
+    // a missing follower object all publish 0 so the peer destroys theirs.
+    if (!IsFollowerVisible())
+        return 0;
+    follower = GetFollowerObject();
+    if (follower == NULL || follower->invisible)
+        return 0;
+    if (!(follower->graphicsId & OBJ_EVENT_MON))
+        return 0;
+    return HNS_COOP_FOLLOWER_VISIBLE | ((u32)follower->graphicsId & HNS_COOP_FOLLOWER_GFX_MASK);
+#endif
+}
+
 static void Coop_PublishLocalPosition(void)
 {
     // Publish from the local player avatar itself, not from the link-player
@@ -2868,6 +2903,7 @@ static void Coop_PublishLocalPosition(void)
     gHnsCoopMailbox.localY = (u32)(u16)obj->currentCoords.y;
     gHnsCoopMailbox.localGender = (u32)gSaveBlock2Ptr->playerGender;
     gHnsCoopMailbox.localFacing = (u32)facing;
+    gHnsCoopMailbox.localFollower = Coop_PackLocalFollower();
 }
 
 // Presence that does not depend on the GBA link handshake: as long as the
@@ -3034,6 +3070,180 @@ static void Coop_SnapRemoteLinkPlayers(void)
         ObjectEventUpdateElevation(obj, NULL);
     }
 }
+
+static struct ObjectEvent *Coop_GetRemoteFollowerObject(void)
+{
+    u32 i;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        if (gObjectEvents[i].active && gObjectEvents[i].localId == OBJ_EVENT_ID_REMOTE_FOLLOWER)
+            return &gObjectEvents[i];
+    }
+    return NULL;
+}
+
+static void Coop_DestroyRemoteFollower(void)
+{
+    struct ObjectEvent *follower = Coop_GetRemoteFollowerObject();
+
+    if (follower != NULL)
+        RemoveObjectEvent(follower);
+}
+
+static struct ObjectEvent *Coop_GetRemotePartnerObject(void)
+{
+    u8 i;
+    u8 selfId;
+
+    if (!IsOverworldLinkActive())
+    {
+        struct LinkPlayerObjectEvent *remote = &gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID];
+
+        if (remote->active)
+            return &gObjectEvents[remote->objEventId];
+        return NULL;
+    }
+
+    selfId = gLocalLinkPlayerId;
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        if (i == selfId)
+            continue;
+        if (gLinkPlayerObjectEvents[i].active)
+            return &gObjectEvents[gLinkPlayerObjectEvents[i].objEventId];
+    }
+    return NULL;
+}
+
+// Spawn / walk / hide the peer's follower one tile behind their avatar.
+// Movement mirrors Coop_SnapRemoteLinkPlayers: walk when ≤1 tile away, snap
+// only when ≥2 tiles out. Same-map only via Coop_IsPeerVisible.
+static void Coop_UpdateRemoteFollower(void)
+{
+    struct ObjectEvent *follower;
+    struct ObjectEvent *partner;
+    u32 packed = gHnsCoopMailbox.remoteFollower;
+    u16 graphicsId;
+    s16 targetX, targetY;
+    s16 dx, dy;
+    enum Direction facing;
+    enum Direction stepDir;
+    u8 elevation;
+    u8 objId;
+
+    if (!Coop_IsPeerVisible()
+     || packed == 0
+     || (packed & HNS_COOP_FOLLOWER_VISIBLE) == 0)
+    {
+        Coop_DestroyRemoteFollower();
+        return;
+    }
+
+    graphicsId = (u16)(packed & HNS_COOP_FOLLOWER_GFX_MASK);
+    if (!(graphicsId & OBJ_EVENT_MON)
+     || SpeciesToGraphicsInfo(graphicsId & OBJ_EVENT_MON_SPECIES_MASK,
+                              graphicsId & OBJ_EVENT_MON_SHINY,
+                              graphicsId & OBJ_EVENT_MON_FEMALE) == NULL)
+    {
+        Coop_DestroyRemoteFollower();
+        return;
+    }
+
+    partner = Coop_GetRemotePartnerObject();
+    if (partner != NULL && partner->active)
+    {
+        targetX = partner->currentCoords.x;
+        targetY = partner->currentCoords.y;
+        facing = linkDirection(partner);
+        elevation = partner->currentElevation;
+    }
+    else
+    {
+        targetX = (s16)gHnsCoopMailbox.remoteX;
+        targetY = (s16)gHnsCoopMailbox.remoteY;
+        facing = (enum Direction)gHnsCoopMailbox.remoteFacing;
+        elevation = 3;
+        if (targetX == 0 && targetY == 0)
+        {
+            Coop_DestroyRemoteFollower();
+            return;
+        }
+    }
+
+    if (facing == DIR_NONE)
+        facing = DIR_SOUTH;
+    // One tile behind the partner, opposite of their facing (same idea as
+    // local followers tracking the avatar's previous tile).
+    MoveCoords(GetOppositeDirection(facing), &targetX, &targetY);
+
+    follower = Coop_GetRemoteFollowerObject();
+    if (follower != NULL && follower->graphicsId != graphicsId)
+    {
+        // Graphics changed: respawn so dynamic mon palettes reload cleanly.
+        Coop_DestroyRemoteFollower();
+        follower = NULL;
+    }
+
+    if (follower == NULL)
+    {
+        struct ObjectEventTemplate template =
+        {
+            .localId = OBJ_EVENT_ID_REMOTE_FOLLOWER,
+            .graphicsId = graphicsId,
+            .flagId = 0,
+            .x = targetX - MAP_OFFSET,
+            .y = targetY - MAP_OFFSET,
+            .elevation = elevation,
+            // Idle type; co-op code drives steps via held movements below.
+            .movementType = MOVEMENT_TYPE_FACE_DOWN,
+        };
+
+        objId = SpawnSpecialObjectEvent(&template);
+        if (objId >= OBJECT_EVENTS_COUNT)
+            return;
+        follower = &gObjectEvents[objId];
+        ObjectEventTurn(follower, facing);
+        return;
+    }
+
+    ObjectEventClearHeldMovementIfFinished(follower);
+    dx = targetX - follower->currentCoords.x;
+    dy = targetY - follower->currentCoords.y;
+    if (dx < 0)
+        dx = -dx;
+    if (dy < 0)
+        dy = -dy;
+
+    if (dx + dy >= 2)
+    {
+        // Too far (warp / resync): teleport cleanly like presence snap.
+        ObjectEventClearHeldMovementIfActive(follower);
+        MoveObjectEventToMapCoords(follower, targetX, targetY);
+        ObjectEventTurn(follower, facing);
+        ObjectEventUpdateElevation(follower, NULL);
+        return;
+    }
+
+    if (dx == 0 && dy == 0)
+    {
+        if (!ObjectEventIsMovementOverridden(follower))
+            ObjectEventTurn(follower, facing);
+        ObjectEventUpdateElevation(follower, NULL);
+        return;
+    }
+
+    // Exactly one tile behind the target: take a vanilla walk step.
+    if (ObjectEventIsMovementOverridden(follower))
+        return;
+
+    if (dx >= dy)
+        stepDir = (targetX > follower->currentCoords.x) ? DIR_EAST : DIR_WEST;
+    else
+        stepDir = (targetY > follower->currentCoords.y) ? DIR_SOUTH : DIR_NORTH;
+    ObjectEventSetHeldMovement(follower, GetWalkNormalMovementAction(stepDir));
+    ObjectEventUpdateElevation(follower, NULL);
+}
 #else
 bool8 Coop_ArePlayersOnSameMap(void) { return FALSE; }
 bool8 Coop_IsPeerVisible(void) { return FALSE; }
@@ -3101,6 +3311,7 @@ void CB1_Overworld(void)
         Coop_PublishLocalPosition();
         Coop_UpdateRemotePresence();
         Coop_SnapRemoteLinkPlayers();
+        Coop_UpdateRemoteFollower();
 #endif
     }
 }
@@ -4171,6 +4382,7 @@ static void CB1_OverworldLink(void)
         UpdateAllLinkPlayers(gLinkPartnersHeldKeys, selfId);
 #if IS_HNS
         Coop_SnapRemoteLinkPlayers();
+        Coop_UpdateRemoteFollower();
 #endif
 
         // Note: Because guestId is between 0 and 4, while the smallest key code is

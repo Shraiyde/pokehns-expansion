@@ -3199,7 +3199,8 @@ void RemoveObjectEventsOutsideView(void)
             // Followers should not go OOB, or their sprites may be freed early during a cross-map scripting event,
             // such as Wally's Ralts catch sequence
             if (objectEvent->active && !objectEvent->isPlayer && objectEvent->localId != OBJ_EVENT_ID_FOLLOWER
-             && objectEvent->localId != OBJ_EVENT_ID_NPC_FOLLOWER)
+             && objectEvent->localId != OBJ_EVENT_ID_NPC_FOLLOWER
+             && objectEvent->localId != OBJ_EVENT_ID_REMOTE_FOLLOWER)
                 RemoveObjectEventIfOutsideView(objectEvent);
         }
     }
@@ -3976,6 +3977,9 @@ static const u8 *GetObjectEventScriptPointerByLocalIdAndMap(u8 localId, u8 mapNu
 {
     if (localId == OBJ_EVENT_ID_FOLLOWER)
         return EventScript_Follower;
+    // Co-op remote follower has no map template; do not dereference NULL.
+    if (localId == OBJ_EVENT_ID_REMOTE_FOLLOWER)
+        return NULL;
     return GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup)->script;
 }
 
@@ -6997,7 +7001,8 @@ u32 GetObjectObjectCollidesWith(struct ObjectEvent *objectEvent, s16 x, s16 y, b
     u8 i;
     struct ObjectEvent *curObject;
 
-    if (objectEvent->localId == OBJ_EVENT_ID_FOLLOWER)
+    if (objectEvent->localId == OBJ_EVENT_ID_FOLLOWER
+     || objectEvent->localId == OBJ_EVENT_ID_REMOTE_FOLLOWER)
         return OBJECT_EVENTS_COUNT; // follower cannot collide with other objects, but they can collide with it
 
     if (addCoords)

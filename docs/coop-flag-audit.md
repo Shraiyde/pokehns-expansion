@@ -353,6 +353,13 @@ has been applied.
    mailbox layout bump. Facility peer-drop uses `B_OUTCOME_PLAYER_TELEPORTED` /
    party snapshot restore and does **not** set `CHALLENGE_STATUS_LOST`.
 
+**Closed in mailbox v12 follower presence**
+
+10. **Partner follower OW** — mailbox v12 appends `localFollower` /
+    `remoteFollower` (sizeof 2292). ROM publishes packed local follower gfx;
+    Android mirrors peer → `remoteFollower`; remote object
+    `OBJ_EVENT_ID_REMOTE_FOLLOWER` (`0xFC`). See `docs/coop-mailbox.md`.
+
 ---
 
 ## 6. True leftovers only

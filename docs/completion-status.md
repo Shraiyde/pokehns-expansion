@@ -119,8 +119,8 @@ Remaining gaps are non-story leftovers only.
 
 Pass 3 added script specials (`Script_IsCoopLinkActive`,
 `Script_CoopArePlayersOnSameMap`). Pass 4 added shared transient Tower
-Link Multi invite flags (see `docs/coop-flag-audit.md`). Mailbox layout
-unchanged (`HNS_COOP_MAILBOX_VERSION` still `11`).
+Link Multi invite flags (see `docs/coop-flag-audit.md`). Mailbox **v12**
+appends follower presence fields (`docs/coop-mailbox.md`).
 
 | Class | Examples |
 | --- | --- |
@@ -134,7 +134,7 @@ Do not share personal inventory, party, or money.
 | Constant | Value | Where |
 | --- | --- | --- |
 | `HNS_COOP_MAILBOX_MAGIC` | `0x504F4F43` (`COOP`) | `src/overworld.c` |
-| `HNS_COOP_MAILBOX_VERSION` | `11` (unchanged; no new mailbox fields) | `src/overworld.c` |
+| `HNS_COOP_MAILBOX_VERSION` | `12` (`localFollower` @ 2284, `remoteFollower` @ 2288, sizeof 2292) | `src/overworld.c` |
 | `HNS_COOP_CONFIG_BLOB_SIZE` | `44` | `src/overworld.c` |
 | `HNS_COOP_FLAG_QUEUE_SIZE` | `128` | `src/overworld.c` |
 | `HNS_COOP_VAR_QUEUE_SIZE` | `128` | `src/overworld.c` |

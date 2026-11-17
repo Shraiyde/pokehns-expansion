@@ -672,6 +672,10 @@
 #define LOCALID_PLAYER                     255
 #define OBJ_EVENT_ID_FOLLOWER              0xFE
 #define OBJ_EVENT_ID_NPC_FOLLOWER          0xFD
+// Co-op partner's follower Pokémon OW (not local OBJ_EVENT_ID_FOLLOWER).
+// Chosen just below NPC follower; outside normal map localId range, in the
+// dynamic/special band (>= OBJ_EVENT_ID_DYNAMIC_BASE).
+#define OBJ_EVENT_ID_REMOTE_FOLLOWER       0xFC
 
 // Aliases for old names. "object event id" normally refers to an index into gObjectEvents, which these are not.
 // Used for link player OWs in CreateLinkPlayerSprite

@@ -435,6 +435,11 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
             return NULL;
     }
 
+    // Partner follower OW is a special localId with no template / talk script.
+    if (objectEventId != OBJECT_EVENTS_COUNT
+     && gObjectEvents[objectEventId].localId == OBJ_EVENT_ID_REMOTE_FOLLOWER)
+        return NULL;
+
     if (objectEventId == OBJECT_EVENTS_COUNT || gObjectEvents[objectEventId].localId == LOCALID_PLAYER)
     {
         if (MetatileBehavior_IsCounter(metatileBehavior) != TRUE)
