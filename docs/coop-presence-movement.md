@@ -97,11 +97,16 @@ field moves, cutscenes that hide/reload objects, fades, or reconnects.
 (`ClearObjectEvent` / `memset`), so **`spriteId == 0`**. `CreateSprite` allocates
 from index 0, so the local player avatar is almost always `gSprites[0]`.
 
-On New Bark outdoors with a same-map peer, CB1 called ForceClear on the reserved
-partner/follower slots (empty → spriteId 0) and **destroyed the local player
-sprite**. The camera still tracked sprite id 0 (now dead/reused), so the player
-looked missing and unable to move while the partner/NPC/follower sprites (higher
-ids, or re-spawned by the watchdog) still drew.
+Triggered on Join PC Host (including **one phone**): every CB1 tick,
+`Coop_DestroyRemoteFollower` ForceCleared the empty reserved follower slot
+(`spriteId == 0`) and **destroyed the local player sprite**. Same path fires
+when a same-map peer makes the presence watchdog Ensure/ForceClear the partner
+slot. The camera still tracked sprite id 0 (now dead/reused), so the player
+looked missing and unable to move while partner/NPC sprites (higher ids, or
+re-spawned by the watchdog) still drew. Offline/unconnected play is unchanged:
+local input still drives the avatar; the PC host remains authoritative for
+relaying each phone's POSITION claim to the partner.
 
 Fix: only `DestroySprite` when the object event is **`active`** and owns that
-sprite; never ForceClear `gPlayerAvatar.objectEventId`.
+sprite; never ForceClear `gPlayerAvatar.objectEventId`; skip follower
+ForceClear when the reserved slot is already empty.
