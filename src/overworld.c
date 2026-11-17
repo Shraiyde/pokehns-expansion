@@ -3025,6 +3025,16 @@ bool8 Coop_IsPeerVisible(void) { return FALSE; }
 void Coop_SetSioActive(bool8 active) { (void)active; }
 #endif
 
+u16 Script_IsCoopLinkActive(void)
+{
+    return IsCoopLinkActive();
+}
+
+u16 Script_CoopArePlayersOnSameMap(void)
+{
+    return Coop_ArePlayersOnSameMap();
+}
+
 bool32 IsOverworldLinkActive(void)
 {
     if (gMain.callback1 == CB1_OverworldLink)

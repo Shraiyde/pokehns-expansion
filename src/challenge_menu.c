@@ -43,7 +43,7 @@ enum {
 };
 
 // =============================================================================
-// Per-tab item enums — placeholder items for skeleton testing
+// Per-tab item enums
 // =============================================================================
 
 enum {
@@ -330,7 +330,7 @@ static const u16 sTextPal[] = INCBIN_U16("graphics/interface/option_menu_text_cu
 #define TEXT_COLOR_OPTIONS_RED_DARK_SHADOW   14
 
 // =============================================================================
-// Placeholder choice strings
+// Choice strings
 // =============================================================================
 
 static const u8 *const sChoices_OffOn[] = {
@@ -359,7 +359,7 @@ static const u8 sText_TopBar_Save[]   = _("{R_BUTTON}SAVE");
 static const u8 sText_TopBar_Cancel[] = _("{B_BUTTON}CANCEL");
 
 // =============================================================================
-// Tab item tables — skeleton placeholders
+// Tab item tables
 // =============================================================================
 
 static const u8 *const sDesc_Gamemode[] = {

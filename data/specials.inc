@@ -709,3 +709,5 @@ gSpecials::
 	def_special GivePartyMonNationalRibbon
 	def_special GetMaxPartySize
 	def_special IsPartyLimitChallengeActive
+	def_special Script_IsCoopLinkActive
+	def_special Script_CoopArePlayersOnSameMap

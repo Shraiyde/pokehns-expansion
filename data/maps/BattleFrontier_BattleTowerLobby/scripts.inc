@@ -1043,23 +1043,21 @@ BattleFrontier_BattleTowerLobby_Text_CanLeaveUntilLossOrSevenWins:
 	.string "You'd best be certain that you're up\n"
 	.string "to the challenge.$"
 
-@ Unused
+@ Legacy stub — Double desk is live
 BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "DOUBLE BATTLE CORNER!\p"
-	.string "Unfortunately, the BATTLE ROOMS\n"
-	.string "are still under construction.\p"
-	.string "Please come back when the work\n"
-	.string "is completed.$"
+	.string "Please speak with the DOUBLE BATTLE\n"
+	.string "attendant at this desk to challenge\l"
+	.string "the DOUBLE BATTLE ROOMS.$"
 
-@ Unused
+@ Legacy stub — Multi desk is live
 BattleFrontier_BattleTowerLobby_Text_MultiBattleRoomConstruction:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "MULTI BATTLE CORNER!\p"
-	.string "Unfortunately, the BATTLE ROOMS\n"
-	.string "are still under construction.\p"
-	.string "Please come back when the work\n"
-	.string "is completed.$"
+	.string "Please speak with the MULTI BATTLE\n"
+	.string "attendant at this desk to find a\l"
+	.string "partner and challenge the rooms.$"
 
 BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge:
 	.string "We look forward to seeing you on\n"

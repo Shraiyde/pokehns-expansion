@@ -421,6 +421,7 @@ SafariZoneGate_SafariZoneEntrance_Text_BoyGiveCase:
 	.string "Here, you seem like you need this.$"
 
 SafariZoneGate_SafariZoneEntrance_Text_Engineer:
-	.string "Sorry Trainer, this area is still\n"
-	.string "under construction. Check back\l"
-	.string "later!$"
+	.string "WARDEN BAOBA's expansion crew is\n"
+	.string "still clearing this sector.\p"
+	.string "We'll open it once BAOBA gives the\n"
+	.string "word — hang tight!$"

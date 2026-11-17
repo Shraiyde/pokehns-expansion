@@ -300,6 +300,8 @@ BattleFrontier_BattleTowerLobby_EventScript_MultisAttendant_hns::
 	setvar VAR_FRONTIER_FACILITY, FRONTIER_FACILITY_TOWER
 	clearflag FLAG_CHOSEN_MULTI_BATTLE_NPC_PARTNER
 	special SavePlayerParty
+	specialvar VAR_RESULT, Script_CoopArePlayersOnSameMap
+	call_if_eq VAR_RESULT, TRUE, BattleFrontier_BattleTowerLobby_EventScript_MultisCoopNote_hns
 	msgbox BattleFrontier_BattleTowerLobby_Text_WelcomeMultiBattle_hns, MSGBOX_DEFAULT
 BattleFrontier_BattleTowerLobby_EventScript_AskEnterMultisChallenge_hns::
 	message BattleFrontier_BattleTowerLobby_Text_TakeMultisChallenge_hns
@@ -310,6 +312,10 @@ BattleFrontier_BattleTowerLobby_EventScript_AskEnterMultisChallenge_hns::
 	case 1, BattleFrontier_BattleTowerLobby_EventScript_ExplainMultisChallenge_hns
 	case 2, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge_hns
 	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_MultisCoopNote_hns::
+	msgbox BattleFrontier_BattleTowerLobby_Text_MultisCoopNote_hns, MSGBOX_DEFAULT
+	return
 
 BattleFrontier_BattleTowerLobby_EventScript_TryEnterMultisChallenge_hns::
 	setvar VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_MULTIS
@@ -363,6 +369,13 @@ BattleFrontier_BattleTowerLobby_EventScript_LinkMultisAttendant_hns::
 	lock
 	faceplayer
 	setvar VAR_FRONTIER_FACILITY, FRONTIER_FACILITY_TOWER
+	@ Heart & Soul co-op uses the mailbox link, not wireless/cable Battle Tower
+	@ multi. When a co-op partner is present, send them to NPC Multi (real play)
+	@ or explain that field co-op already covers human tag battles.
+	specialvar VAR_RESULT, Script_CoopArePlayersOnSameMap
+	goto_if_eq VAR_RESULT, TRUE, BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerHere_hns
+	specialvar VAR_RESULT, Script_IsCoopLinkActive
+	goto_if_eq VAR_RESULT, TRUE, BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerAway_hns
 	special SavePlayerParty
 	msgbox BattleFrontier_BattleTowerLobby_Text_WelcomeLinkMultiBattle_hns, MSGBOX_DEFAULT
 BattleFrontier_BattleTowerLobby_EventScript_AskEnterLinkMultisChallenge_hns::
@@ -374,6 +387,24 @@ BattleFrontier_BattleTowerLobby_EventScript_AskEnterLinkMultisChallenge_hns::
 	case 1, BattleFrontier_BattleTowerLobby_EventScript_ExplainLinkMultisChallenge_hns
 	case 2, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge_hns
 	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge_hns
+
+BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerHere_hns::
+	msgbox BattleFrontier_BattleTowerLobby_Text_CoopPartnerHereUseMulti_hns, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, YES, BattleFrontier_BattleTowerLobby_EventScript_RedirectToMultisFromLink_hns
+	msgbox BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns, MSGBOX_DEFAULT
+	release
+	end
+
+BattleFrontier_BattleTowerLobby_EventScript_LinkMultisCoopPartnerAway_hns::
+	msgbox BattleFrontier_BattleTowerLobby_Text_CoopPartnerAway_hns, MSGBOX_DEFAULT
+	release
+	end
+
+BattleFrontier_BattleTowerLobby_EventScript_RedirectToMultisFromLink_hns::
+	clearflag FLAG_CHOSEN_MULTI_BATTLE_NPC_PARTNER
+	special SavePlayerParty
+	msgbox BattleFrontier_BattleTowerLobby_Text_WelcomeMultiBattle_hns, MSGBOX_DEFAULT
+	goto BattleFrontier_BattleTowerLobby_EventScript_AskEnterMultisChallenge_hns
 
 BattleFrontier_BattleTowerLobby_EventScript_TryEnterLinkMultisChallenge_hns::
 	setvar VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_LINK_MULTIS
@@ -1043,23 +1074,46 @@ BattleFrontier_BattleTowerLobby_Text_CanLeaveUntilLossOrSevenWins_hns:
 	.string "You'd best be certain that you're up\n"
 	.string "to the challenge.$"
 
-@ Unused
+@ Legacy Emerald stubs — Double / Multi desks are live; kept for string-table stability.
 BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction_hns:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "DOUBLE BATTLE CORNER!\p"
-	.string "Unfortunately, the BATTLE ROOMS\n"
-	.string "are still under construction.\p"
-	.string "Please come back when the work\n"
-	.string "is completed.$"
+	.string "Please speak with the DOUBLE BATTLE\n"
+	.string "attendant at this desk to challenge\l"
+	.string "the DOUBLE BATTLE ROOMS.$"
 
-@ Unused
 BattleFrontier_BattleTowerLobby_Text_MultiBattleRoomConstruction_hns:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "MULTI BATTLE CORNER!\p"
-	.string "Unfortunately, the BATTLE ROOMS\n"
-	.string "are still under construction.\p"
-	.string "Please come back when the work\n"
-	.string "is completed.$"
+	.string "Please speak with the MULTI BATTLE\n"
+	.string "attendant at this desk to find a\l"
+	.string "partner and challenge the rooms.$"
+
+BattleFrontier_BattleTowerLobby_Text_CoopPartnerHereUseMulti_hns:
+	.string "Your co-op partner is right here!\p"
+	.string "Tower LINK MULTI still needs a classic\n"
+	.string "wireless or cable link, so for now\l"
+	.string "please use the MULTI BATTLE desk.\p"
+	.string "You'll pick a Tower partner in the\n"
+	.string "BATTLE SALON. Out in the field, you\l"
+	.string "two already tag-team trainers together.\p"
+	.string "Shall I send you to the MULTI desk?$"
+
+BattleFrontier_BattleTowerLobby_Text_CoopPartnerAway_hns:
+	.string "LINK MULTI needs either a wireless /\n"
+	.string "cable partner, or your co-op partner\l"
+	.string "standing with you in this lobby.\p"
+	.string "Ask your partner to meet you here,\n"
+	.string "or challenge the MULTI BATTLE desk\l"
+	.string "for an NPC partner in the Salon.$"
+
+BattleFrontier_BattleTowerLobby_Text_MultisCoopNote_hns:
+	.string "I see your co-op partner with you!\p"
+	.string "Tower MULTI pairs you with a TRAINER\n"
+	.string "from the BATTLE SALON.\p"
+	.string "When you battle TRAINERS together out\n"
+	.string "in the field, you already fight as a\l"
+	.string "team — that won't change here.$"
 
 BattleFrontier_BattleTowerLobby_Text_LookForwardToAnotherChallenge_hns:
 	.string "We look forward to seeing you on\n"

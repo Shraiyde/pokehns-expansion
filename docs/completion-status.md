@@ -16,7 +16,11 @@ debug softlock warps, hardened Copycat / HOF scripts, closed NULL
 gate-officer dialogs on Cycling Road, and replaced an Indigo League
 “check back later” placeholder.
 
-Remaining gaps are postgame / optional polish only.
+Pass 3 closed remaining postgame polish: Battle Tower double/multi
+desks, challenge-menu comment hygiene, Safari Baoba expansion flavor,
+and NewSinjoh `scripts.pory` sync.
+
+Remaining gaps are non-story leftovers only.
 
 ---
 
@@ -37,6 +41,8 @@ Remaining gaps are postgame / optional polish only.
 - [x] Map warp targets: every `dest_map` / connection resolves to an existing map id
 - [x] No undefined `FLAG_*` references from HnS scripts; key story vars advance through full ranges
 - [x] Cycling Road gate officers (Route 16 / Route 18) have talk scripts
+- [x] Battle Tower Singles / Doubles / Multi (NPC Salon partner) desks live; Link Multi desk wired with co-op-aware redirect
+- [x] Safari Baoba expansion engineer dialog (HnS flavor); Cianwood / Route 19 road-closed lines intentional
 
 ---
 
@@ -69,35 +75,63 @@ Remaining gaps are postgame / optional polish only.
 - No undefined flags; story state vars for Goldenrod / Mahogany / Olivine / SS Aqua / Kanto Rocket / Blackthorn advance through expected values
 - Main-path “under construction” lines (Cianwood Safari engineer, Route 19) are intentional GSC blocks, not unfinished content
 
+### Pass 3 (Battle Tower / polish leftovers)
+
+| Priority | Issue | Fix |
+| --- | --- | --- |
+| P3 | Battle Tower lobby Link Multi attendant `script: NULL`; missing Apprentice object (LOCALID skew) | Restored Apprentice + local_ids; wired Link Multi + Reporter |
+| P3 | Emerald leftover Double/Multi “under construction” strings | Rewrote to point at live desks |
+| P3 | Co-op + Tower Link Multi | Desk detects co-op partner via `Script_CoopArePlayersOnSameMap` / `Script_IsCoopLinkActive`; redirects to Multi desk (Salon NPC partner). Full human Tower Link Multi still needs classic wireless/cable (no facility warp-sync) |
+| — | Challenge menu “skeleton / placeholder” comments | Cleaned; modes already implemented |
+| — | Safari expansion engineers generic stub text | Baoba crew flavor; engineers hide on `FLAG_SAFARI_ZONE_WEST_EXPANSION` |
+| — | `NewSinjoh_hns/scripts.pory` empty | Synced raw mirror of `scripts.inc` |
+
 ---
 
-## 4. Remaining (postgame / optional only)
+## 4. Remaining (non-story leftovers only)
 
 | Item | Notes |
 | --- | --- |
 | Cutscene-only NPCs with `NULL` interact scripts (Silver / Lance / Clair props) | Expected; triggered via map scripts |
-| `NewSinjoh_hns/scripts.pory` empty | `scripts.inc` is complete |
-| Challenge menu “skeleton / placeholder” source comments | Feature implemented; comments stale |
-| Battle Tower double/multi “under construction” strings | Emerald leftovers; singles supported |
-| Safari “under construction” flavor NPCs | Baoba quest itself is scripted |
+| New Bark Lab policeman `NULL` script | Cutscene-only (`FLAG_HIDE_LAB_POLICEMAN`) |
 | `TestMap1_hns` / `TestMap2_hns` still in tree | Unlinked from New Bark / Ecruteak; engine stress maps |
 | Emerald/FRLG leftover maps in repo | Outside HnS overworld progression |
-| New Bark Lab policeman `NULL` script | Cutscene-only (`FLAG_HIDE_LAB_POLICEMAN`) |
+| Battle Tower human Link Multi via co-op mailbox | Needs facility warp-sync; Multi desk + field co-op tag battles cover play today |
+| Battle Dome “?????? Under Construction!” sign text | Functionally unused OutsideWest leftover living in Dome lobby scripts |
+
+### Intentional “under construction” flavor (not unfinished content)
+
+| Location | Role |
+| --- | --- |
+| Cianwood City engineer | GSC-style road closed until Safari opens |
+| Safari Zone engineers (`FLAG_SAFARI_ZONE_WEST_EXPANSION`) | Baoba expansion gates; hide when west expansion flag is set (Route 27 Baoba call) |
+| Emerald `SafariZone_South_Text_AreaOffLimits*` | Emerald Safari leftovers; not on HnS main path |
 
 ---
 
 ## 5. Co-op notes
 
-Neither pass added new story flags/vars. No updates to
+Pass 3 added script specials only (`Script_IsCoopLinkActive`,
+`Script_CoopArePlayersOnSameMap`). No updates to
 `IsCoopSharedStoryFlag`, `sCoopSharedStoryVars`, or
 `docs/coop-flag-audit.md` were required.
 
 | Class | Examples |
 | --- | --- |
-| **SHARED** | Gym/badge flags, story hide/show, Rocket/quest flags, `FLAG_DEFEATED_RED`, `VAR_SINJOH_STORYLINE`, `VAR_ALOLA_STATE`, HMs / progress key items |
+| **SHARED** | Gym/badge flags, story hide/show, Rocket/quest flags, `FLAG_DEFEATED_RED`, `VAR_SINJOH_STORYLINE`, `VAR_ALOLA_STATE`, HMs / progress key items, `FLAG_SAFARI_ZONE_EAST/WEST_EXPANSION` |
 | **PER-PLAYER** | Legendaries/statics, gift ownership, normal item balls, phone gift pending flags |
 
 Do not share personal inventory, party, or money.
+
+### Mailbox / protocol constants (parent compat)
+
+| Constant | Value | Where |
+| --- | --- | --- |
+| `HNS_COOP_MAILBOX_MAGIC` | `0x504F4F43` (`COOP`) | `src/overworld.c` |
+| `HNS_COOP_MAILBOX_VERSION` | `11` | `src/overworld.c` |
+| `HNS_COOP_CONFIG_BLOB_SIZE` | `44` | `src/overworld.c` |
+| `HNS_COOP_FLAG_QUEUE_SIZE` | `128` | `src/overworld.c` |
+| `HNS_COOP_VAR_QUEUE_SIZE` | `128` | `src/overworld.c` |
 
 ---
 
@@ -107,3 +141,4 @@ Do not share personal inventory, party, or money.
 - `script: NULL` scan focused on officers / gates / talkable humans
 - Silver trainerbattle inventory vs expected story points
 - Indigo Reception Gate conditions; flag/var set-vs-check; main-path placeholder text
+- Battle Tower lobby object/local_id audit; Safari expansion flag wiring
