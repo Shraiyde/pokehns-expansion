@@ -45,7 +45,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_Copycat1_Male::
 	waitmovement 0
 	applymovement LOCALID_GOLD, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Male_1, MSGBOX_NPC
+	msgbox Copycat_Text_Male_1, MSGBOX_DEFAULT
 	applymovement LOCALID_GOLD, GoldenrodCity_RadioTower_5F_Movement_Spin
 	waitmovement 0
 	removeobject LOCALID_GOLD
@@ -55,7 +55,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_Copycat1_Male::
 	waitmovement 0
 	applymovement LOCALID_COPYCAT, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_QuickMimicking, MSGBOX_NPC
+	msgbox Copycat_Text_QuickMimicking, MSGBOX_DEFAULT
 	closemessage
 	release
 	end
@@ -70,7 +70,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_Copycat1_Female::
 	waitmovement 0
 	applymovement LOCALID_KRIS, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Male_1, MSGBOX_NPC
+	msgbox Copycat_Text_Male_1, MSGBOX_DEFAULT
 	applymovement LOCALID_KRIS, GoldenrodCity_RadioTower_5F_Movement_Spin
 	waitmovement 0
 	removeobject LOCALID_KRIS
@@ -80,7 +80,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_Copycat1_Female::
 	waitmovement 0
 	applymovement LOCALID_COPYCAT, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_QuickMimicking, MSGBOX_NPC
+	msgbox Copycat_Text_QuickMimicking, MSGBOX_DEFAULT
 	closemessage
 	release
 	end
@@ -100,7 +100,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatReturnedMachinePart_Male::
 	waitmovement 0
 	applymovement LOCALID_GOLD, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Male_2, MSGBOX_NPC
+	msgbox Copycat_Text_Male_2, MSGBOX_DEFAULT
 	applymovement LOCALID_GOLD, GoldenrodCity_RadioTower_5F_Movement_Spin
 	waitmovement 0
 	removeobject LOCALID_GOLD
@@ -110,9 +110,10 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatReturnedMachinePart_Male::
 	waitmovement 0
 	applymovement LOCALID_COPYCAT, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Worried, MSGBOX_NPC
+	msgbox Copycat_Text_Worried, MSGBOX_DEFAULT
 	closemessage
 	setvar VAR_FAN_CLUB_CLEFAIRY, 1
+	release
 	end
 
 SaffronCity_CopyCatsHouse_2F_EventScript_CopycatReturnedMachinePart_Female::
@@ -125,7 +126,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatReturnedMachinePart_Female::
 	waitmovement 0
 	applymovement LOCALID_KRIS, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Male_2, MSGBOX_NPC
+	msgbox Copycat_Text_Male_2, MSGBOX_DEFAULT
 	applymovement LOCALID_KRIS, GoldenrodCity_RadioTower_5F_Movement_Spin
 	waitmovement 0
 	removeobject LOCALID_KRIS
@@ -135,9 +136,10 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatReturnedMachinePart_Female::
 	waitmovement 0
 	applymovement LOCALID_COPYCAT, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Worried, MSGBOX_NPC
+	msgbox Copycat_Text_Worried, MSGBOX_DEFAULT
 	closemessage
 	setvar VAR_FAN_CLUB_CLEFAIRY, 1
+	release
 	end
 
 SaffronCity_CopyCatsHouse_2F_EventScript_CopycatReturnDoll::
@@ -170,7 +172,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatAfterDollReturned_Male::
 	waitmovement 0
 	applymovement LOCALID_GOLD, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Male_3, MSGBOX_NPC
+	msgbox Copycat_Text_Male_3, MSGBOX_DEFAULT
 	applymovement LOCALID_GOLD, GoldenrodCity_RadioTower_5F_Movement_Spin
 	waitmovement 0
 	removeobject LOCALID_GOLD
@@ -180,8 +182,9 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatAfterDollReturned_Male::
 	waitmovement 0
 	applymovement LOCALID_COPYCAT, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_ItsAScream, MSGBOX_NPC
+	msgbox Copycat_Text_ItsAScream, MSGBOX_DEFAULT
 	closemessage
+	release
 	end
 
 SaffronCity_CopyCatsHouse_2F_EventScript_CopycatAfterDollReturned_Female::
@@ -194,7 +197,7 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatAfterDollReturned_Female::
 	waitmovement 0
 	applymovement LOCALID_KRIS, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_Male_3, MSGBOX_NPC
+	msgbox Copycat_Text_Male_3, MSGBOX_DEFAULT
 	applymovement LOCALID_KRIS, GoldenrodCity_RadioTower_5F_Movement_Spin
 	waitmovement 0
 	removeobject LOCALID_KRIS
@@ -204,8 +207,9 @@ SaffronCity_CopyCatsHouse_2F_EventScript_CopycatAfterDollReturned_Female::
 	waitmovement 0
 	applymovement LOCALID_COPYCAT, Common_Movement_FacePlayer
 	waitmovement 0
-	msgbox Copycat_Text_ItsAScream, MSGBOX_NPC
+	msgbox Copycat_Text_ItsAScream, MSGBOX_DEFAULT
 	closemessage
+	release
 	end
 
 Copycat_Text_Male_1:
