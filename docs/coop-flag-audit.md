@@ -10,12 +10,19 @@ the peer, or included in the bounded initial sync scan.
 
 **Clearflag sync:** `FlagSet` and `FlagClear` both queue shared changes when the
 local bit actually toggles. Packets carry `flagId | ((value?1:0) << 16)`. Incoming
-apply calls `FlagSet` (+ bag grant if newly set) or `FlagClear` (no grant), under
-`sApplyingRemoteStoryFlag`. Initial sync stays **SET-only** for progress
-(badges/trainers/quest/received/registration/sys unlocks). **Bidirectional hide**
-ranges also queue **CLEAR** when locally unset: NPC_HIDE (except Celebi), shared
-story HIDE_POKEMON (incl. electrodes), Ice Path boulders, and shared extended
-story hides — so reconnect mirrors object show state without wiping badges.
+apply calls `FlagSet` (+ bag grant if newly set / `!wasSet`, so reconnect grants
+do not duplicate items) or `FlagClear` (no grant), under `sApplyingRemoteStoryFlag`.
+Initial sync stays **SET-only** for progress (badges/trainers/quest/received/
+registration/sys unlocks). **Bidirectional hide** ranges also queue **CLEAR** when
+locally unset: NPC_HIDE (except Celebi), shared story HIDE_POKEMON (incl.
+electrodes), Ice Path boulders, and shared extended story hides — so reconnect
+mirrors object show state without wiping badges.
+
+**Peer reconnect (`peerLinkReady`):** a rising edge `0→1` while transport is still
+connected re-runs `Coop_BeginInitialSharedFlagSync()` even if an initial sync had
+already completed, requeuing shared SET/CLEAR + story vars after presence expiry /
+soft return. A falling edge clears `localStorySyncReady` / `remoteStorySyncReady`
+(and local `sCoopStorySyncReady`) so WORLD_READY must re-handshake.
 
 ---
 

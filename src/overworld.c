@@ -268,6 +268,7 @@ static EWRAM_DATA bool8 sCoopInitialExtraFlagsStarted = FALSE;
 static EWRAM_DATA u16 sCoopInitialExtraFlagCursor = 0;
 static EWRAM_DATA bool8 sCoopInitialSyncStarted = FALSE;
 static EWRAM_DATA bool8 sCoopStorySyncReady = FALSE;
+static EWRAM_DATA bool8 sCoopPrevPeerLinkReady = FALSE;
 static EWRAM_DATA u8 sCoopStorySyncQuietFrames = 0;
 static EWRAM_DATA u32 sCoopLastIncomingFlagWrite = 0;
 static EWRAM_DATA u32 sCoopLastIncomingVarWrite = 0;
@@ -938,6 +939,7 @@ static void Coop_ResetStorySyncQueues(void)
     sCoopInitialExtraFlagCursor = 0;
     sCoopInitialSyncStarted = FALSE;
     sCoopStorySyncReady = FALSE;
+    sCoopPrevPeerLinkReady = FALSE;
     sCoopStorySyncQuietFrames = 0;
     sCoopLastIncomingFlagWrite = 0;
     sCoopLastIncomingVarWrite = 0;
@@ -1009,8 +1011,29 @@ static void Coop_UpdateStorySyncReadiness(void)
 // callback, but also from presence-only overworld when peerLinkReady is set.
 static void Coop_ProcessStorySyncFrame(void)
 {
-    if (gHnsCoopMailbox.peerLinkReady && !sCoopInitialSyncStarted)
+    bool8 peerReady = gHnsCoopMailbox.peerLinkReady != 0;
+
+    // Presence expiry / soft return: peerLinkReady can drop and rise again
+    // without a full transport disconnect. Re-queue initial shared flags/vars
+    // on the rising edge, and force WORLD_READY to re-handshake on the fall.
+    if (peerReady && !sCoopPrevPeerLinkReady)
+    {
+        if (gHnsCoopMailbox.transportConnected)
+            Coop_BeginInitialSharedFlagSync();
+    }
+    else if (!peerReady && sCoopPrevPeerLinkReady)
+    {
+        gHnsCoopMailbox.remoteStorySyncReady = 0;
+        gHnsCoopMailbox.localStorySyncReady = 0;
+        sCoopStorySyncReady = FALSE;
+        sCoopStorySyncQuietFrames = 0;
+    }
+    else if (peerReady && !sCoopInitialSyncStarted)
+    {
         Coop_BeginInitialSharedFlagSync();
+    }
+
+    sCoopPrevPeerLinkReady = peerReady;
 
     if (!Coop_CanQueueStorySync())
         return;
