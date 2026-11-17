@@ -89,3 +89,19 @@ field moves, cutscenes that hide/reload objects, fades, or reconnects.
 | Eviction block | `RemoveObjectEvent` no-ops on reserved ids; `SetObjectInvisibility` refuses to hide the remote follower / reserved slots; OOB cull skips reserved ids. Only `Coop_ForceClearObjectEventSlot` zeroes them for a controlled re-spawn. |
 | Every-frame watchdog | `CB1_Overworld` → `Coop_UpdateRemotePresence` / `Coop_UpdateRemoteFollower`: if peer is same-map but the avatar is missing, wrong slot, dead sprite, or hidden → ForceClear + spawn into the reserved slot immediately (same tick). |
 | Field return | Still invalidates stale link entries after battles/menus; watchdog re-spawns on the next CB1. |
+
+## Local player invisible / cannot move (APK 252 / ROM 132)
+
+`Coop_ForceClearObjectEventSlot` destroyed `gSprites[spriteId]` whenever
+`spriteId < MAX_SPRITES && inUse`. Unused object-event slots are zeroed
+(`ClearObjectEvent` / `memset`), so **`spriteId == 0`**. `CreateSprite` allocates
+from index 0, so the local player avatar is almost always `gSprites[0]`.
+
+On New Bark outdoors with a same-map peer, CB1 called ForceClear on the reserved
+partner/follower slots (empty → spriteId 0) and **destroyed the local player
+sprite**. The camera still tracked sprite id 0 (now dead/reused), so the player
+looked missing and unable to move while the partner/NPC/follower sprites (higher
+ids, or re-spawned by the watchdog) still drew.
+
+Fix: only `DestroySprite` when the object event is **`active`** and owns that
+sprite; never ForceClear `gPlayerAvatar.objectEventId`.

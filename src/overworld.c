@@ -2969,8 +2969,19 @@ static void Coop_ForceClearObjectEventSlot(u8 objectEventId)
 
     if (objectEventId >= OBJECT_EVENTS_COUNT)
         return;
+    // Never touch the local player avatar slot. Presence/follower reserved
+    // ids are COUNT-1/COUNT-2; a bug or stale prefer-id must not wipe slot 0.
+    if (objectEventId == gPlayerAvatar.objectEventId)
+        return;
     obj = &gObjectEvents[objectEventId];
-    if (obj->spriteId < MAX_SPRITES && gSprites[obj->spriteId].inUse)
+    // ClearObjectEvent / memset leave spriteId == 0 on unused slots.
+    // CreateSprite scans from 0, so the local player is almost always
+    // gSprites[0]. Destroying that sprite makes the player invisible and
+    // leaves the camera tracking a dead/reused id (cannot "move").
+    // Only destroy a sprite that this active object event actually owns.
+    if (obj->active
+     && obj->spriteId < MAX_SPRITES
+     && gSprites[obj->spriteId].inUse)
         DestroySprite(&gSprites[obj->spriteId]);
     memset(obj, 0, sizeof(*obj));
 }
@@ -3311,8 +3322,10 @@ static void Coop_DestroyRemoteFollower(void)
 
     if (follower != NULL)
         RemoveObjectEvent(follower);
-    // Ensure the reserved follower slot is empty for the next spawn.
-    Coop_ForceClearObjectEventSlot(COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID);
+    // RemoveObjectEvent no-ops on the reserved id; ForceClear actually frees
+    // it. Skip when already empty so CB1 does not memset every frame.
+    if (gObjectEvents[COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID].active)
+        Coop_ForceClearObjectEventSlot(COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID);
 }
 
 static struct ObjectEvent *Coop_GetRemotePartnerObject(void)
