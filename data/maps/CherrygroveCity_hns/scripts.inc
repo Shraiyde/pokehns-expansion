@@ -75,7 +75,7 @@ CherryGroveCity_EventScript_TriggerGent_Bottom::
 CherryGroveCity_EventScript_TriggerGent_Cancel::
 	msgbox CherrygroveCity_Text_GuideGentDecline, MSGBOX_DEFAULT
 	closemessage
-	setvar VAR_CHERRYGROVE_CITY_STATE, 1 @ CHANGE THIS TO 1 LATER
+	setvar VAR_CHERRYGROVE_CITY_STATE, 1
 	release
 	end
 

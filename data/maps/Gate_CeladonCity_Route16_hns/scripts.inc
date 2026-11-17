@@ -1,6 +1,10 @@
 Gate_CeladonCity_Route16_hns_MapScripts::
 	.byte 0
 
+Gate_CeladonCity_Route16_EventScript_Officer::
+	msgbox Gate_CeladonCity_Route16_Text_Officer, MSGBOX_NPC
+	end
+
 Gate_CeladonCity_Route16_TriggerScript::
 	lockall
 	specialvar VAR_RESULT, GetPlayerAvatarBike
@@ -31,3 +35,8 @@ Gate_CeladonCity_Route16_ExitCyclingRoad::
 	releaseall
 	end
 
+Gate_CeladonCity_Route16_Text_Officer:
+	.string "CYCLING ROAD is a downhill course\n"
+	.string "by the sea.\p"
+	.string "No pedestrians are allowed, so\n"
+	.string "bring a BICYCLE if you want to ride.$"

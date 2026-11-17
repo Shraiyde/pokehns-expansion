@@ -44,9 +44,11 @@ IndigoPlateau_Text_ShigyNinja:
 	.string "Now, go get 'em!$"
 
 IndigoPlateau_Text_Blackbelt:
-	.string "The POKéMON LEAGUE is not taking\n"
-	.string "new challengers at the moment.\p"
-	.string "Please check back later.$"
+	.string "The ELITE FOUR of the POKéMON\n"
+	.string "LEAGUE await any challenger with\l"
+	.string "eight JOHTO BADGES.\p"
+	.string "Are you ready for that kind of\n"
+	.string "fight?$"
 
 IndigoPlateau_Text_CooltrainerM:
     .string "At the POKéMON LEAGUE, you'll get\n"

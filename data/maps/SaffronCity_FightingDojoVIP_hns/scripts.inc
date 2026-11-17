@@ -25,6 +25,16 @@ SaffronCity_FightingDojoVIP_Text_Nurse1:
 SaffronCity_FightingDojoVIP_Text_Nurse2:
 	.string "We hope to see you again!$"
 
+SaffronCity_FightingDojoVIP_EventScript_Attendant::
+	msgbox SaffronCity_FightingDojoVIP_Text_Attendant, MSGBOX_NPC
+	end
+
+SaffronCity_FightingDojoVIP_Text_Attendant:
+	.string "Welcome to the TRAINING DOJO!\p"
+	.string "GYM LEADERS from JOHTO and KANTO\n"
+	.string "come here to spar after the LEAGUE.\p"
+	.string "If you're looking for a rematch,\n"
+	.string "you've come to the right place.$"
 
 SaffronCity_FightingDojoVIP_EventScript_Declined::
 	closemessage
