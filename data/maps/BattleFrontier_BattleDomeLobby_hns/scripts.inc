@@ -395,7 +395,7 @@ BattleFrontier_OutsideWest_EventScript_BattleDomeSign2_hns::
 	msgbox BattleFrontier_OutsideWest_Text_BattleDomeSign2_hns, MSGBOX_NPC
 	end
 
-@ Unused
+@ Unused leftover (OutsideWest uses BattleDomeSign_hns). Kept for symbol stability.
 BattleFrontier_OutsideWest_EventScript_UnderConstructionSign_hns::
 	msgbox BattleFrontier_OutsideWest_Text_QuestionMarkUnderConstruction_hns, MSGBOX_NPC
 	end
@@ -614,10 +614,10 @@ BattleFrontier_OutsideWest_Text_BattleDomeSign2_hns:
 	.string "The BATTLE DOME\n"
 	.string "Become the Unbeatable Superstar!$"
 
-@ Functionally unused
+@ Unused leftover; text matches the live OutsideWest Dome sign.
 BattleFrontier_OutsideWest_Text_QuestionMarkUnderConstruction_hns:
-	.string "The ??????\n"
-	.string "Under Construction!$"
+	.string "This is the BATTLE DOME!\n"
+	.string "Your path to the invincible superstar!$"
 
 BattleFrontier_BattleDomeLobby_Text_WinnersGainReputation_hns:
 	.string "When a TRAINER chains tournament\n"

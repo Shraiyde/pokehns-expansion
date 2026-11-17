@@ -96,8 +96,7 @@ Remaining gaps are non-story leftovers only.
 | New Bark Lab policeman `NULL` script | Cutscene-only (`FLAG_HIDE_LAB_POLICEMAN`) |
 | `TestMap1_hns` / `TestMap2_hns` still in tree | Unlinked from New Bark / Ecruteak; engine stress maps |
 | Emerald/FRLG leftover maps in repo | Outside HnS overworld progression |
-| Battle Tower human Link Multi via co-op mailbox | Needs facility warp-sync; Multi desk + field co-op tag battles cover play today |
-| Battle Dome “?????? Under Construction!” sign text | Functionally unused OutsideWest leftover living in Dome lobby scripts |
+| Battle Tower human Link Multi via co-op mailbox | Needs facility warp-sync (too large this pass); Multi desk + field co-op tag battles cover play today. Link Multi desk already gives honest co-op redirect strings. |
 
 ### Intentional “under construction” flavor (not unfinished content)
 
