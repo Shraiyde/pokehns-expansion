@@ -34,3 +34,8 @@ version/size check and re-init.
 Special object `OBJ_EVENT_ID_REMOTE_FOLLOWER` (`0xFC`). Same-map only
 (`Coop_IsPeerVisible`). Walk/snap like `Coop_SnapRemoteLinkPlayers`; destroyed
 on hide, map change, or disconnect.
+
+## Presence movement
+
+See [`docs/coop-presence-movement.md`](coop-presence-movement.md) for outdoor
+visibility (`remoteMapId == 0`), step-queue vs snap, and Android POSITION queue.

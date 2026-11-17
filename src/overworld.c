@@ -2912,14 +2912,172 @@ static void Coop_PublishLocalPosition(void)
 // makes both players visible even when the SIO link itself never completes.
 bool8 Coop_IsPeerVisible(void)
 {
+    // Do NOT reject remoteMapId == 0: New Bark Town packs as group 0 / num 0.
+    // remoteMapReady is the unpublished/unset gate; map equality still required.
     return gHnsCoopMailbox.magic == HNS_COOP_MAILBOX_MAGIC
         && gHnsCoopMailbox.peerLinkReady
         && gHnsCoopMailbox.remoteMapReady
-        && gHnsCoopMailbox.remoteMapId != 0
         && gHnsCoopMailbox.localMapId == gHnsCoopMailbox.remoteMapId;
 }
 
 #define COOP_PRESENCE_LINK_ID 1
+#define COOP_STEP_QUEUE_SIZE 24
+#define COOP_PRESENCE_SNAP_TILES 8
+
+static u8 sCoopStepQueue[COOP_STEP_QUEUE_SIZE];
+static u8 sCoopStepQueueRead;
+static u8 sCoopStepQueueWrite;
+static u8 sCoopStepQueueCount;
+static s16 sCoopQueuedTipX;
+static s16 sCoopQueuedTipY;
+static u32 sCoopQueuedForMapId;
+static bool8 sCoopQueueTipValid;
+
+static void Coop_ClearPresenceStepQueue(void)
+{
+    sCoopStepQueueRead = 0;
+    sCoopStepQueueWrite = 0;
+    sCoopStepQueueCount = 0;
+    sCoopQueueTipValid = FALSE;
+}
+
+static void Coop_EnqueuePresenceFacing(u8 facing)
+{
+    if (sCoopStepQueueCount >= COOP_STEP_QUEUE_SIZE)
+        return;
+    sCoopStepQueue[sCoopStepQueueWrite] = facing;
+    sCoopStepQueueWrite = (sCoopStepQueueWrite + 1) % COOP_STEP_QUEUE_SIZE;
+    sCoopStepQueueCount++;
+}
+
+static u8 Coop_DequeuePresenceFacing(void)
+{
+    u8 facing;
+
+    if (sCoopStepQueueCount == 0)
+        return 0;
+    facing = sCoopStepQueue[sCoopStepQueueRead];
+    sCoopStepQueueRead = (sCoopStepQueueRead + 1) % COOP_STEP_QUEUE_SIZE;
+    sCoopStepQueueCount--;
+    return facing;
+}
+
+// Build an axis-aligned path of FACING_* steps from (fromX,fromY) to (toX,toY).
+// Prefer matching the peer's last published facing on the final axis.
+static void Coop_EnqueuePathTo(s16 fromX, s16 fromY, s16 toX, s16 toY, u8 preferFacing)
+{
+    s16 x = fromX;
+    s16 y = fromY;
+    u8 steps = 0;
+
+    while ((x != toX || y != toY) && sCoopStepQueueCount < COOP_STEP_QUEUE_SIZE && steps < COOP_STEP_QUEUE_SIZE)
+    {
+        u8 facing;
+        bool8 moveX = (x != toX);
+        bool8 moveY = (y != toY);
+
+        // Prefer the published facing's axis when both remain, so L-paths
+        // match how the peer actually walked instead of always X-then-Y.
+        if (moveX && moveY)
+        {
+            if (preferFacing == FACING_UP || preferFacing == FACING_DOWN)
+                moveX = FALSE;
+            else if (preferFacing == FACING_LEFT || preferFacing == FACING_RIGHT)
+                moveY = FALSE;
+            else
+                moveY = FALSE; // default horizontal-first
+        }
+
+        if (sCoopStepQueueCount >= COOP_STEP_QUEUE_SIZE)
+            break;
+        if (moveX)
+        {
+            facing = (toX > x) ? FACING_RIGHT : FACING_LEFT;
+            x += (toX > x) ? 1 : -1;
+        }
+        else
+        {
+            facing = (toY > y) ? FACING_DOWN : FACING_UP;
+            y += (toY > y) ? 1 : -1;
+        }
+        Coop_EnqueuePresenceFacing(facing);
+        // Tip tracks the last enqueued tile so a full queue does not pretend
+        // we already reached the target (which would stop further enqueues).
+        sCoopQueuedTipX = x;
+        sCoopQueuedTipY = y;
+        sCoopQueueTipValid = TRUE;
+        steps++;
+    }
+}
+
+// Presence avatars must not get stuck on NPCs/collision — force the one-tile
+// glide the same way FacingHandler_DpadMovement does after a clear check.
+static void Coop_ForcePresenceStep(struct ObjectEvent *obj, u8 facing)
+{
+    s16 x, y;
+
+    linkDirection(obj) = FlipVerticalAndClearForced(facing, linkDirection(obj));
+    ObjectEventMoveDestCoords(obj, linkDirection(obj), &x, &y);
+    obj->directionSequenceIndex = 16;
+    ShiftObjectEventCoords(obj, x, y);
+    ObjectEventUpdateElevation(obj, NULL);
+}
+
+// Outdoors can fill all 16 object slots; steal the farthest non-critical NPC
+// so the partner avatar can always spawn.
+static bool8 Coop_IsProtectedObjectEvent(struct ObjectEvent *obj)
+{
+    u8 i;
+
+    if (!obj->active)
+        return TRUE;
+    if (obj->localId == OBJ_EVENT_ID_PLAYER || obj->localId == OBJ_EVENT_ID_CAMERA
+     || obj->localId == OBJ_EVENT_ID_FOLLOWER || obj->localId == OBJ_EVENT_ID_REMOTE_FOLLOWER)
+        return TRUE;
+    for (i = 0; i < MAX_LINK_PLAYERS; i++)
+    {
+        if (gLinkPlayerObjectEvents[i].active
+         && gLinkPlayerObjectEvents[i].objEventId == (u8)(obj - gObjectEvents))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static void Coop_EnsurePresenceObjectSlot(void)
+{
+    u8 id = GetFirstInactiveObjectEventId();
+    s16 px, py;
+    u8 best = OBJECT_EVENTS_COUNT;
+    u32 bestDist = 0;
+    u8 i;
+
+    if (id < OBJECT_EVENTS_COUNT)
+        return;
+
+    px = gObjectEvents[gPlayerAvatar.objectEventId].currentCoords.x;
+    py = gObjectEvents[gPlayerAvatar.objectEventId].currentCoords.y;
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        struct ObjectEvent *obj = &gObjectEvents[i];
+        s16 dx, dy;
+        u32 dist;
+
+        if (Coop_IsProtectedObjectEvent(obj))
+            continue;
+        dx = obj->currentCoords.x - px;
+        dy = obj->currentCoords.y - py;
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+        dist = (u32)dx + (u32)dy;
+        if (dist >= bestDist)
+        {
+            bestDist = dist;
+            best = i;
+        }
+    }
+    if (best < OBJECT_EVENTS_COUNT)
+        RemoveObjectEvent(&gObjectEvents[best]);
+}
 
 static void Coop_UpdateRemotePresence(void)
 {
@@ -2944,17 +3102,35 @@ static void Coop_UpdateRemotePresence(void)
     {
         if (!remote->active)
         {
-            struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+            s16 spawnX = (s16)gHnsCoopMailbox.remoteX;
+            s16 spawnY = (s16)gHnsCoopMailbox.remoteY;
 
+            // (0,0) = unpublished coords (MAP_OFFSET makes real tiles ≥7). Fall
+            // back to the local avatar only until the first POSITION arrives.
+            if (spawnX == 0 && spawnY == 0)
+            {
+                struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+                spawnX = playerObj->currentCoords.x;
+                spawnY = playerObj->currentCoords.y;
+            }
+            Coop_EnsurePresenceObjectSlot();
             SpawnLinkPlayerObjectEvent(COOP_PRESENCE_LINK_ID,
-                playerObj->currentCoords.x, playerObj->currentCoords.y,
-                (u8)gHnsCoopMailbox.remoteGender);
-            CreateLinkPlayerSprite(COOP_PRESENCE_LINK_ID, 0);
+                spawnX, spawnY, (u8)gHnsCoopMailbox.remoteGender);
+            if (gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID].active)
+            {
+                CreateLinkPlayerSprite(COOP_PRESENCE_LINK_ID, 0);
+                Coop_ClearPresenceStepQueue();
+                sCoopQueuedTipX = spawnX;
+                sCoopQueuedTipY = spawnY;
+                sCoopQueueTipValid = TRUE;
+                sCoopQueuedForMapId = gHnsCoopMailbox.localMapId;
+            }
         }
     }
     else if (remote->active)
     {
         DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
+        Coop_ClearPresenceStepQueue();
     }
 }
 
@@ -2989,7 +3165,6 @@ static void Coop_SnapRemoteLinkPlayers(void)
     {
         struct LinkPlayerObjectEvent *linkPlayer;
         struct ObjectEvent *obj;
-        s16 dx, dy;
 
         if (i == selfId)
             continue;
@@ -2999,73 +3174,81 @@ static void Coop_SnapRemoteLinkPlayers(void)
         obj = &gObjectEvents[linkPlayer->objEventId];
         if (!obj->active)
             continue;
-        if (linkActive)
+        if (linkActive && !sameMap)
         {
             // Different map: hide the peer's avatar instead of leaving it
             // standing where it spawned on this map. The object keeps
             // existing (so the link protocol is untouched) and comes back
             // the moment the maps match again.
-            if (!sameMap)
-            {
-                if (obj->spriteId != MAX_SPRITES)
-                    gSprites[obj->spriteId].invisible = TRUE;
-                continue;
-            }
             if (obj->spriteId != MAX_SPRITES)
-                gSprites[obj->spriteId].invisible = FALSE;
-            obj->previousCoords.x = obj->currentCoords.x = x;
-            obj->previousCoords.y = obj->currentCoords.y = y;
-            linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
-            // The link sprite renders from initialCoords, not currentCoords.
-            // Only teleport a standing avatar so in-flight vanilla steps keep
-            // their glide.
-            if (obj->directionSequenceIndex == 0)
-            {
-                SetSpritePosToMapCoords(x, y, &obj->initialCoords.x, &obj->initialCoords.y);
-                obj->initialCoords.x += 8;
-            }
-            ObjectEventUpdateElevation(obj, NULL);
+                gSprites[obj->spriteId].invisible = TRUE;
+            Coop_ClearPresenceStepQueue();
             continue;
         }
-        // No link: walk the avatar with vanilla steps toward the peer's
-        // published position so movement animates instead of teleporting.
-        // Walk only when exactly one tile behind: at the same speed as the
-        // peer the avatar can never close a gap while the peer keeps moving,
-        // so a 2-tile gap means relay lag or a direction change, and the
-        // avatar snaps back instead of trailing further.
-        dx = x - obj->currentCoords.x;
-        dy = y - obj->currentCoords.y;
-        if (dx < 0)
-            dx = -dx;
-        if (dy < 0)
-            dy = -dy;
-        if (dx + dy >= 2)
+        if (linkActive && obj->spriteId != MAX_SPRITES)
+            gSprites[obj->spriteId].invisible = FALSE;
+
+        // Presence and same-map link: drive the avatar from an authoritative
+        // tile step queue (no dead-reckoning).
+        // New remote targets append cardinal steps; only snap on large desync
+        // (warp/resync). Never dead-reckon or invent tiles.
+        if (sCoopQueuedForMapId != gHnsCoopMailbox.localMapId)
         {
-            // Too far to walk (warp or resync): teleport cleanly.
-            obj->previousCoords.x = obj->currentCoords.x = x;
-            obj->previousCoords.y = obj->currentCoords.y = y;
-            SetSpritePosToMapCoords(x, y, &obj->initialCoords.x, &obj->initialCoords.y);
-            obj->initialCoords.x += 8;
-            linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
-            obj->directionSequenceIndex = 0;
+            Coop_ClearPresenceStepQueue();
+            sCoopQueuedForMapId = gHnsCoopMailbox.localMapId;
         }
-        else if (dx == 0 && dy == 0)
+
+        // Ignore unpublished (0,0) targets — keep last known / queued path.
+        if (!(x == 0 && y == 0))
         {
-            linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+            s16 tipX = sCoopQueueTipValid ? sCoopQueuedTipX : obj->currentCoords.x;
+            s16 tipY = sCoopQueueTipValid ? sCoopQueuedTipY : obj->currentCoords.y;
+            s16 gapX = x - tipX;
+            s16 gapY = y - tipY;
+            s16 gap;
+
+            if (gapX < 0) gapX = -gapX;
+            if (gapY < 0) gapY = -gapY;
+            gap = gapX + gapY;
+            if (gap >= COOP_PRESENCE_SNAP_TILES)
+            {
+                Coop_ClearPresenceStepQueue();
+                obj->previousCoords.x = obj->currentCoords.x = x;
+                obj->previousCoords.y = obj->currentCoords.y = y;
+                SetSpritePosToMapCoords(x, y, &obj->initialCoords.x, &obj->initialCoords.y);
+                obj->initialCoords.x += 8;
+                linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+                obj->directionSequenceIndex = 0;
+                sCoopQueuedTipX = x;
+                sCoopQueuedTipY = y;
+                sCoopQueueTipValid = TRUE;
+            }
+            else if (gap > 0)
+            {
+                Coop_EnqueuePathTo(tipX, tipY, x, y, (u8)gHnsCoopMailbox.remoteFacing);
+            }
         }
-        else if (dx >= dy)
+
+        // Play at most one new step per frame once the prior glide finishes.
+        if (obj->directionSequenceIndex == 0)
         {
-            if (x > obj->currentCoords.x)
-                SetPlayerFacingDirection(i, FACING_RIGHT);
-            else
-                SetPlayerFacingDirection(i, FACING_LEFT);
-        }
-        else
-        {
-            if (y > obj->currentCoords.y)
-                SetPlayerFacingDirection(i, FACING_DOWN);
-            else
-                SetPlayerFacingDirection(i, FACING_UP);
+            if (sCoopStepQueueCount != 0)
+            {
+                u8 facing = Coop_DequeuePresenceFacing();
+                u16 beforeX = obj->currentCoords.x;
+                u16 beforeY = obj->currentCoords.y;
+
+                SetPlayerFacingDirection(i, facing);
+                // Collision can refuse the step; force it so the queue stays
+                // authoritative instead of teleporting next frame.
+                if (obj->currentCoords.x == beforeX && obj->currentCoords.y == beforeY
+                 && obj->directionSequenceIndex == 0)
+                    Coop_ForcePresenceStep(obj, facing);
+            }
+            else if (!(x == 0 && y == 0))
+            {
+                linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+            }
         }
         ObjectEventUpdateElevation(obj, NULL);
     }
@@ -3117,8 +3300,8 @@ static struct ObjectEvent *Coop_GetRemotePartnerObject(void)
 }
 
 // Spawn / walk / hide the peer's follower one tile behind their avatar.
-// Movement mirrors Coop_SnapRemoteLinkPlayers: walk when ≤1 tile away, snap
-// only when ≥2 tiles out. Same-map only via Coop_IsPeerVisible.
+// Walk toward the partner; snap only on large desync (≥ COOP_PRESENCE_SNAP_TILES).
+// Same-map only via Coop_IsPeerVisible.
 static void Coop_UpdateRemoteFollower(void)
 {
     struct ObjectEvent *follower;
@@ -3215,9 +3398,9 @@ static void Coop_UpdateRemoteFollower(void)
     if (dy < 0)
         dy = -dy;
 
-    if (dx + dy >= 2)
+    if (dx + dy >= COOP_PRESENCE_SNAP_TILES)
     {
-        // Too far (warp / resync): teleport cleanly like presence snap.
+        // Large desync only (warp / resync): teleport. Smaller gaps walk.
         ObjectEventClearHeldMovementIfActive(follower);
         MoveObjectEventToMapCoords(follower, targetX, targetY);
         ObjectEventTurn(follower, facing);
