@@ -18,6 +18,7 @@
 #include "agb_flash.h"
 #include "event_data.h"
 #include "constants/event_objects.h"
+#include "link.h"
 
 static void ApplyNewEncryptionKeyToAllEncryptedData(u32 encryptionKey);
 
@@ -212,6 +213,22 @@ void SaveObjectEvents(void)
         // To avoid crash on vanilla, save follower as inactive
         if (gObjectEvents[i].localId == OBJ_EVENT_ID_FOLLOWER)
             gSaveBlock1Ptr->objectEvents[i].active = FALSE;
+#if IS_HNS
+        // Co-op partner / remote follower must never serialize into the save —
+        // continue would otherwise show ghost or missing sprites.
+        if (gObjectEvents[i].localId == OBJ_EVENT_ID_REMOTE_FOLLOWER
+         || Coop_IsReservedPresenceObjectEventId((u8)i)
+         || (gObjectEvents[i].localId >= OBJ_EVENT_ID_DYNAMIC_BASE
+          && gObjectEvents[i].localId < OBJ_EVENT_ID_DYNAMIC_BASE + MAX_LINK_PLAYERS))
+        {
+            memset(&gSaveBlock1Ptr->objectEvents[i], 0, sizeof(gSaveBlock1Ptr->objectEvents[i]));
+            gSaveBlock1Ptr->objectEvents[i].localId = 0xFF;
+            gSaveBlock1Ptr->objectEvents[i].mapNum = MAP_NUM(MAP_UNDEFINED);
+            gSaveBlock1Ptr->objectEvents[i].mapGroup = MAP_GROUP(MAP_UNDEFINED);
+            gSaveBlock1Ptr->objectEvents[i].active = FALSE;
+            gSaveBlock1Ptr->objectEvents[i].spriteId = 127;
+        }
+#endif
     }
 }
 

@@ -17,6 +17,7 @@
 #include "fake_rtc.h"
 #include "field_camera.h"
 #include "field_control_avatar.h"
+#include "field_door.h"
 #include "field_effect.h"
 #include "field_effect_helpers.h"
 #include "field_message_box.h"
@@ -188,7 +189,7 @@ static u16 GetDirectionForDpadKey(u16);
 static void CB1_OverworldLink(void);
 #if IS_HNS
 #define HNS_COOP_MAILBOX_MAGIC 0x504F4F43
-#define HNS_COOP_MAILBOX_VERSION 13
+#define HNS_COOP_MAILBOX_VERSION 14
 #define HNS_COOP_CONFIG_BLOB_SIZE 44
 // localFollower / remoteFollower packing (u32):
 //   bit 31     = visible (0 → treat as no follower / hide)
@@ -261,10 +262,14 @@ struct HnsCoopMailbox
     // v13: ROM increments on return-to-field so Android forces POSITION republish
     // and asks the peer for a fresh presence snapshot. Offset 2292; sizeof 2296.
     volatile u32 localPresenceResync;
+    // v14: locomotion / door meta for HeldMovement partner replay.
+    // Packing: action:8 | avatarState:8 | doorPhase:8 | claimSeq:8. Offsets 2296/2300.
+    volatile u32 localAvatarState;
+    volatile u32 remoteAvatarState;
 };
 
 STATIC_ASSERT((sizeof(struct ChallengeSettings) <= HNS_COOP_CONFIG_BLOB_SIZE - 4), CoopChallengeSettingsFitsBlob);
-STATIC_ASSERT((sizeof(struct HnsCoopMailbox) == 2296), HnsCoopMailboxV13Size);
+STATIC_ASSERT((sizeof(struct HnsCoopMailbox) == 2304), HnsCoopMailboxV14Size);
 
 // EWRAM_DATA is placed in .sbss by the GBA linker, so initialize the
 // mailbox header at runtime instead of using a nonzero static initializer.
@@ -2869,6 +2874,36 @@ static u32 Coop_PackLocalFollower(void)
 #endif
 }
 
+static u8 Coop_LocalAvatarStateClass(void)
+{
+    if (TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_MACH_BIKE))
+        return PLAYER_AVATAR_STATE_MACH_BIKE;
+    if (TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_ACRO_BIKE))
+        return PLAYER_AVATAR_STATE_ACRO_BIKE;
+    if (TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_SURFING))
+        return PLAYER_AVATAR_STATE_SURFING;
+    if (TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_UNDERWATER))
+        return PLAYER_AVATAR_STATE_UNDERWATER;
+    return PLAYER_AVATAR_STATE_NORMAL;
+}
+
+static u8 Coop_LocalDoorPhase(struct ObjectEvent *obj, u8 facing)
+{
+    u8 behavior;
+
+    if (obj == NULL || !obj->active)
+        return 0;
+    behavior = MapGridGetMetatileBehaviorAt(obj->currentCoords.x, obj->currentCoords.y);
+    if (MetatileBehavior_IsDoor(behavior) || MetatileBehavior_IsNonAnimDoor(behavior))
+    {
+        if (facing == DIR_NORTH)
+            return 1; // entering
+        if (facing == DIR_SOUTH)
+            return 2; // exiting / standing on door
+    }
+    return 0;
+}
+
 static void Coop_PublishLocalPosition(void)
 {
     // Publish from the local player avatar itself, not from the link-player
@@ -2885,6 +2920,10 @@ static void Coop_PublishLocalPosition(void)
     // from the local link player object instead.
     struct ObjectEvent *obj;
     u8 facing;
+    u8 action;
+    u8 stateClass;
+    u8 doorPhase;
+    u8 claimSeq;
 
     if (IsOverworldLinkActive())
     {
@@ -2908,6 +2947,15 @@ static void Coop_PublishLocalPosition(void)
     gHnsCoopMailbox.localGender = (u32)gSaveBlock2Ptr->playerGender;
     gHnsCoopMailbox.localFacing = (u32)facing;
     gHnsCoopMailbox.localFollower = Coop_PackLocalFollower();
+
+    action = obj->movementActionId;
+    stateClass = Coop_LocalAvatarStateClass();
+    doorPhase = Coop_LocalDoorPhase(obj, facing);
+    claimSeq = (u8)((gHnsCoopMailbox.localAvatarState >> 24) + 1);
+    gHnsCoopMailbox.localAvatarState = (u32)action
+        | ((u32)stateClass << 8)
+        | ((u32)doorPhase << 16)
+        | ((u32)claimSeq << 24);
 }
 
 // Presence that does not depend on the GBA link handshake: as long as the
@@ -2989,6 +3037,22 @@ static void Coop_ForceClearObjectEventSlot(u8 objectEventId)
 #define COOP_PRESENCE_LINK_ID 1
 #define COOP_STEP_QUEUE_SIZE 24
 #define COOP_PRESENCE_SNAP_TILES 8
+// After field entry, wait for map NPCs to claim slots before partner spawn.
+#define COOP_SPAWN_DELAY_FRAMES 90
+// Back off after a failed create instead of retrying every CB1 tick.
+#define COOP_SPAWN_RETRY_FRAMES 60
+// When the step queue runs deep, play faster walk/run actions to catch up.
+#define COOP_HURRY_QUEUE_DEPTH 4
+// Door enter hold: refuse respawn in front of the door after partner enters.
+#define COOP_DOOR_HOLD_FRAMES 180
+#define COOP_DOOR_WAIT_FRAMES 60
+#define COOP_DOOR_GIVEUP_FRAMES 150
+
+#define COOP_DOOR_NONE       0
+#define COOP_DOOR_HOLD       1
+#define COOP_DOOR_EXIT_OPEN  2
+#define COOP_DOOR_EXIT_STEP  3
+#define COOP_DOOR_ENTER_OPEN 4
 
 static u8 sCoopStepQueue[COOP_STEP_QUEUE_SIZE];
 static u8 sCoopStepQueueRead;
@@ -2998,6 +3062,14 @@ static s16 sCoopQueuedTipX;
 static s16 sCoopQueuedTipY;
 static u32 sCoopQueuedForMapId;
 static bool8 sCoopQueueTipValid;
+static u16 sCoopFramesInOverworld;
+static u16 sCoopSpawnCooldown;
+static u8 sCoopPresenceGfxState;
+static u8 sCoopDoorState;
+static u16 sCoopDoorTimer;
+static s16 sCoopDoorX;
+static s16 sCoopDoorY;
+static bool8 sCoopWasOnField;
 
 static void Coop_ClearPresenceStepQueue(void)
 {
@@ -3089,6 +3161,73 @@ static void Coop_ForcePresenceStep(struct ObjectEvent *obj, u8 facing)
     ObjectEventUpdateElevation(obj, NULL);
 }
 
+static u8 Coop_FacingToDirection(u8 facing)
+{
+    switch (facing)
+    {
+    case FACING_UP: return DIR_NORTH;
+    case FACING_DOWN: return DIR_SOUTH;
+    case FACING_LEFT: return DIR_WEST;
+    case FACING_RIGHT: return DIR_EAST;
+    default: return facing;
+    }
+}
+
+// Pick a real engine movement action from host-confirmed avatar state + facing.
+// Walk/run/bike/surf use the same action families the local player produces so
+// the engine owns sub-pixel interpolation instead of a manual coord chase.
+static u8 Coop_MovementActionForStep(u8 facing, u8 avatarState, u8 publishedAction, bool8 hurry)
+{
+    u8 dir = Coop_FacingToDirection(facing);
+    u8 action = publishedAction;
+
+    if (action != 0
+     && action != MOVEMENT_ACTION_FACE_DOWN
+     && action != MOVEMENT_ACTION_FACE_UP
+     && action != MOVEMENT_ACTION_FACE_LEFT
+     && action != MOVEMENT_ACTION_FACE_RIGHT
+     && (action <= 0x0F
+      || (action >= 0x15 && action <= 0x38)
+      || (action >= 0x3A && action <= 0x3D)
+      || (action >= 0x42 && action <= 0x4D)
+      || (action >= 0x64 && action <= 0x8B)))
+    {
+        if (hurry
+         && ((action >= MOVEMENT_ACTION_WALK_NORMAL_DOWN && action <= MOVEMENT_ACTION_WALK_NORMAL_RIGHT)
+          || (action >= MOVEMENT_ACTION_WALK_FAST_DOWN && action <= MOVEMENT_ACTION_WALK_FAST_RIGHT)
+          || (action >= MOVEMENT_ACTION_WALK_FASTER_DOWN && action <= MOVEMENT_ACTION_WALK_FASTER_RIGHT)
+          || (action >= MOVEMENT_ACTION_PLAYER_RUN_DOWN && action <= MOVEMENT_ACTION_PLAYER_RUN_RIGHT)))
+            return GetWalkFasterMovementAction(dir);
+        return action;
+    }
+
+    switch (avatarState)
+    {
+    case PLAYER_AVATAR_STATE_MACH_BIKE:
+    case PLAYER_AVATAR_STATE_ACRO_BIKE:
+        return GetWalkFastMovementAction(dir);
+    case PLAYER_AVATAR_STATE_SURFING:
+    case PLAYER_AVATAR_STATE_UNDERWATER:
+        return GetRideWaterCurrentMovementAction(dir);
+    default:
+        if (hurry)
+            return GetPlayerRunMovementAction(dir);
+        return GetWalkNormalMovementAction(dir);
+    }
+}
+
+static bool8 Coop_PresenceReadyForMovement(struct ObjectEvent *obj)
+{
+    if (!ObjectEventIsHeldMovementActive(obj))
+        return TRUE;
+    if (ObjectEventCheckHeldMovementStatus(obj))
+    {
+        ObjectEventClearHeldMovement(obj);
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static void Coop_EnsurePresenceObjectSlot(void)
 {
     // Always own the reserved high slot so map NPCs / cutscenes cannot
@@ -3096,10 +3235,215 @@ static void Coop_EnsurePresenceObjectSlot(void)
     Coop_ForceClearObjectEventSlot(COOP_PRESENCE_OBJ_EVENT_ID);
 }
 
+static void Coop_ScrubSaveStaging(void)
+{
+    u8 i;
+
+    // Save serializes gObjectEvents into SaveBlock1. Partner / remote-follower
+    // entries must never persist or a continue shows ghosts / missing sprites.
+    // Scrub the staging copy only — live screen objects stay untouched.
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        struct ObjectEvent *saved = &gSaveBlock1Ptr->objectEvents[i];
+
+        if (i == COOP_PRESENCE_OBJ_EVENT_ID
+         || i == COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID
+         || saved->localId == OBJ_EVENT_ID_REMOTE_FOLLOWER
+         || (saved->localId >= OBJ_EVENT_ID_DYNAMIC_BASE
+          && saved->localId < OBJ_EVENT_ID_DYNAMIC_BASE + MAX_LINK_PLAYERS))
+        {
+            memset(saved, 0, sizeof(*saved));
+            saved->localId = 0xFF;
+            saved->mapNum = MAP_NUM(MAP_UNDEFINED);
+            saved->mapGroup = MAP_GROUP(MAP_UNDEFINED);
+            saved->movementActionId = MOVEMENT_ACTION_NONE;
+            saved->spriteId = MAX_SPRITES;
+        }
+    }
+}
+
+static void Coop_TickDoorMachine(struct ObjectEvent *obj, bool8 peerVisible)
+{
+    u8 remoteDoor = (u8)((gHnsCoopMailbox.remoteAvatarState >> 16) & 0xFF);
+    u8 behavior;
+
+    if (sCoopDoorTimer != 0)
+        sCoopDoorTimer--;
+
+    switch (sCoopDoorState)
+    {
+    case COOP_DOOR_NONE:
+        if (!peerVisible && remoteDoor == 1)
+        {
+            // Partner walked into a door on their screen: hold respawn so they
+            // do not flicker back in front of the threshold.
+            sCoopDoorState = COOP_DOOR_HOLD;
+            sCoopDoorTimer = COOP_DOOR_HOLD_FRAMES;
+            if (obj != NULL && obj->active)
+            {
+                sCoopDoorX = obj->currentCoords.x;
+                sCoopDoorY = obj->currentCoords.y;
+            }
+            else
+            {
+                sCoopDoorX = (s16)gHnsCoopMailbox.remoteX;
+                sCoopDoorY = (s16)gHnsCoopMailbox.remoteY;
+            }
+        }
+        else if (peerVisible && remoteDoor == 2 && obj != NULL && obj->active)
+        {
+            behavior = MapGridGetMetatileBehaviorAt(obj->currentCoords.x, obj->currentCoords.y);
+            if (MetatileBehavior_IsDoor(behavior) || MetatileBehavior_IsNonAnimDoor(behavior))
+            {
+                sCoopDoorX = obj->currentCoords.x;
+                sCoopDoorY = obj->currentCoords.y;
+                if (!FieldIsDoorAnimationRunning())
+                {
+                    FieldAnimateDoorOpen(sCoopDoorX, sCoopDoorY);
+                    PlaySE(GetDoorSoundEffect(sCoopDoorX, sCoopDoorY));
+                }
+                sCoopDoorState = COOP_DOOR_EXIT_OPEN;
+                sCoopDoorTimer = COOP_DOOR_WAIT_FRAMES;
+            }
+        }
+        break;
+    case COOP_DOOR_HOLD:
+        if (sCoopDoorTimer == 0 || peerVisible)
+            sCoopDoorState = COOP_DOOR_NONE;
+        break;
+    case COOP_DOOR_EXIT_OPEN:
+        if (!FieldIsDoorAnimationRunning() && sCoopDoorTimer == 0)
+        {
+            sCoopDoorState = COOP_DOOR_EXIT_STEP;
+            sCoopDoorTimer = COOP_DOOR_WAIT_FRAMES;
+        }
+        else if (sCoopDoorTimer == 0 && FieldIsDoorAnimationRunning())
+        {
+            // Give up waiting for the anim so presence cannot freeze forever.
+            sCoopDoorState = COOP_DOOR_NONE;
+        }
+        break;
+    case COOP_DOOR_EXIT_STEP:
+        if (!peerVisible || sCoopDoorTimer == 0)
+        {
+            if (!FieldIsDoorAnimationRunning())
+                FieldAnimateDoorClose(sCoopDoorX, sCoopDoorY);
+            sCoopDoorState = COOP_DOOR_NONE;
+        }
+        break;
+    case COOP_DOOR_ENTER_OPEN:
+        if (sCoopDoorTimer == 0 || !FieldIsDoorAnimationRunning())
+        {
+            if (!FieldIsDoorAnimationRunning())
+                FieldAnimateDoorClose(sCoopDoorX, sCoopDoorY);
+            sCoopDoorState = COOP_DOOR_HOLD;
+            sCoopDoorTimer = COOP_DOOR_HOLD_FRAMES;
+        }
+        break;
+    default:
+        sCoopDoorState = COOP_DOOR_NONE;
+        break;
+    }
+
+    (void)COOP_DOOR_GIVEUP_FRAMES;
+    (void)COOP_DOOR_ENTER_OPEN;
+}
+
+static bool8 Coop_TrySpawnPresenceAvatar(void)
+{
+    s16 spawnX = (s16)gHnsCoopMailbox.remoteX;
+    s16 spawnY = (s16)gHnsCoopMailbox.remoteY;
+    u8 gfxState = (u8)((gHnsCoopMailbox.remoteAvatarState >> 8) & 0xFF);
+
+    if (sCoopDoorState == COOP_DOOR_HOLD)
+        return FALSE;
+    if (sCoopFramesInOverworld < COOP_SPAWN_DELAY_FRAMES)
+        return FALSE;
+    if (sCoopSpawnCooldown != 0)
+    {
+        sCoopSpawnCooldown--;
+        return FALSE;
+    }
+
+    // (0,0) = unpublished coords (MAP_OFFSET makes real tiles ≥7). Fall
+    // back to the local avatar only until the first POSITION arrives.
+    if (spawnX == 0 && spawnY == 0)
+    {
+        struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+        spawnX = playerObj->currentCoords.x;
+        spawnY = playerObj->currentCoords.y;
+    }
+
+    if (gfxState > PLAYER_AVATAR_STATE_WATERING)
+        gfxState = PLAYER_AVATAR_STATE_NORMAL;
+    sCoopPresenceGfxState = gfxState;
+
+    Coop_EnsurePresenceObjectSlot();
+    SpawnLinkPlayerObjectEvent(COOP_PRESENCE_LINK_ID,
+        spawnX, spawnY, (u8)gHnsCoopMailbox.remoteGender);
+    if (!gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID].active)
+    {
+        sCoopSpawnCooldown = COOP_SPAWN_RETRY_FRAMES;
+        return FALSE;
+    }
+
+    CreateLinkPlayerSprite(COOP_PRESENCE_LINK_ID, 0);
+    if (!gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID].active
+     || gObjectEvents[COOP_PRESENCE_OBJ_EVENT_ID].spriteId >= MAX_SPRITES)
+    {
+        DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
+        sCoopSpawnCooldown = COOP_SPAWN_RETRY_FRAMES;
+        return FALSE;
+    }
+
+    {
+        struct ObjectEvent *spawned = &gObjectEvents[COOP_PRESENCE_OBJ_EVENT_ID];
+
+        spawned->invisible = FALSE;
+        if (spawned->spriteId < MAX_SPRITES)
+            gSprites[spawned->spriteId].invisible = FALSE;
+        // Spawning while the camera scrolls can leave the sprite one tile off
+        // grid. Re-place with the engine map-coord mover (pixel compensation
+        // is the wrong fix).
+        MoveObjectEventToMapCoords(spawned, spawnX, spawnY);
+    }
+
+    Coop_ClearPresenceStepQueue();
+    sCoopQueuedTipX = spawnX;
+    sCoopQueuedTipY = spawnY;
+    sCoopQueueTipValid = TRUE;
+    sCoopQueuedForMapId = gHnsCoopMailbox.localMapId;
+    return TRUE;
+}
+
+static void Coop_SyncPresenceGraphics(struct ObjectEvent *obj)
+{
+    u8 want = (u8)((gHnsCoopMailbox.remoteAvatarState >> 8) & 0xFF);
+    u16 graphicsId;
+
+    if (want > PLAYER_AVATAR_STATE_WATERING)
+        want = PLAYER_AVATAR_STATE_NORMAL;
+    if (want == sCoopPresenceGfxState)
+        return;
+
+    // Bike/surf sprites change VRAM size; SetGraphicsId alone can leave a dead
+    // anim table. Destroy and recreate in the same tick (skip spawn delay).
+    graphicsId = GetPlayerAvatarGraphicsIdByStateIdAndGender(want, (u8)gHnsCoopMailbox.remoteGender);
+    DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
+    Coop_ClearPresenceStepQueue();
+    sCoopPresenceGfxState = want;
+    sCoopFramesInOverworld = COOP_SPAWN_DELAY_FRAMES;
+    sCoopSpawnCooldown = 0;
+    (void)graphicsId;
+    Coop_TrySpawnPresenceAvatar();
+    (void)obj;
+}
+
 static void Coop_UpdateRemotePresence(void)
 {
     struct LinkPlayerObjectEvent *remote = &gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID];
     u8 i;
+    bool8 peerVisible = Coop_IsPeerVisible();
 
     // The vanilla link flow owns these objects once the SIO link is up.
     if (IsOverworldLinkActive())
@@ -3133,52 +3477,49 @@ static void Coop_UpdateRemotePresence(void)
             DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
             Coop_ClearPresenceStepQueue();
         }
-        else if ((hidden || obj->invisible) && Coop_IsPeerVisible())
+        else if ((hidden || obj->invisible) && peerVisible)
         {
             obj->invisible = FALSE;
             gSprites[obj->spriteId].invisible = FALSE;
         }
-    }
-
-    if (Coop_IsPeerVisible())
-    {
-        if (!remote->active)
+        else if (peerVisible)
         {
-            s16 spawnX = (s16)gHnsCoopMailbox.remoteX;
-            s16 spawnY = (s16)gHnsCoopMailbox.remoteY;
-
-            // (0,0) = unpublished coords (MAP_OFFSET makes real tiles ≥7). Fall
-            // back to the local avatar only until the first POSITION arrives.
-            if (spawnX == 0 && spawnY == 0)
-            {
-                struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
-                spawnX = playerObj->currentCoords.x;
-                spawnY = playerObj->currentCoords.y;
-            }
-            Coop_EnsurePresenceObjectSlot();
-            SpawnLinkPlayerObjectEvent(COOP_PRESENCE_LINK_ID,
-                spawnX, spawnY, (u8)gHnsCoopMailbox.remoteGender);
-            if (gLinkPlayerObjectEvents[COOP_PRESENCE_LINK_ID].active)
-            {
-                CreateLinkPlayerSprite(COOP_PRESENCE_LINK_ID, 0);
-                {
-                    struct ObjectEvent *spawned = &gObjectEvents[COOP_PRESENCE_OBJ_EVENT_ID];
-                    spawned->invisible = FALSE;
-                    if (spawned->spriteId < MAX_SPRITES)
-                        gSprites[spawned->spriteId].invisible = FALSE;
-                }
-                Coop_ClearPresenceStepQueue();
-                sCoopQueuedTipX = spawnX;
-                sCoopQueuedTipY = spawnY;
-                sCoopQueueTipValid = TRUE;
-                sCoopQueuedForMapId = gHnsCoopMailbox.localMapId;
-            }
+            Coop_SyncPresenceGraphics(obj);
         }
     }
-    else if (remote->active)
+
+    Coop_TickDoorMachine(remote->active ? &gObjectEvents[remote->objEventId] : NULL, peerVisible);
+
+    if (peerVisible)
     {
-        DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
-        Coop_ClearPresenceStepQueue();
+        if (!remote->active)
+            Coop_TrySpawnPresenceAvatar();
+    }
+    else if (remote->active && sCoopDoorState != COOP_DOOR_HOLD
+          && sCoopDoorState != COOP_DOOR_ENTER_OPEN)
+    {
+        // Entering a door: open once, then hold without respawning in front.
+        if (((gHnsCoopMailbox.remoteAvatarState >> 16) & 0xFF) == 1)
+        {
+            struct ObjectEvent *obj = &gObjectEvents[remote->objEventId];
+
+            sCoopDoorX = obj->currentCoords.x;
+            sCoopDoorY = obj->currentCoords.y;
+            if (!FieldIsDoorAnimationRunning())
+            {
+                FieldAnimateDoorOpen(sCoopDoorX, sCoopDoorY);
+                PlaySE(GetDoorSoundEffect(sCoopDoorX, sCoopDoorY));
+            }
+            DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
+            Coop_ClearPresenceStepQueue();
+            sCoopDoorState = COOP_DOOR_ENTER_OPEN;
+            sCoopDoorTimer = COOP_DOOR_WAIT_FRAMES;
+        }
+        else
+        {
+            DestroyLinkPlayerObject(COOP_PRESENCE_LINK_ID);
+            Coop_ClearPresenceStepQueue();
+        }
     }
 }
 
@@ -3279,25 +3620,52 @@ static void Coop_SnapRemoteLinkPlayers(void)
             }
         }
 
-        // Play at most one new step per frame once the prior glide finishes.
-        if (obj->directionSequenceIndex == 0)
+        // Apply at most one host-confirmed step once the prior engine movement
+        // finishes. Prefer ObjectEventSetHeldMovement so walk/run/bike/surf/ledge
+        // animate natively with sub-pixel interpolation; fall back to the link
+        // force-step if the engine rejects the action.
+        if (Coop_PresenceReadyForMovement(obj) && obj->directionSequenceIndex == 0)
         {
             if (sCoopStepQueueCount != 0)
             {
                 u8 facing = Coop_DequeuePresenceFacing();
+                u8 avatarState = (u8)((gHnsCoopMailbox.remoteAvatarState >> 8) & 0xFF);
+                u8 publishedAction = (u8)(gHnsCoopMailbox.remoteAvatarState & 0xFF);
+                bool8 hurry = (sCoopStepQueueCount >= COOP_HURRY_QUEUE_DEPTH);
+                u8 action = Coop_MovementActionForStep(facing, avatarState, publishedAction, hurry);
                 u16 beforeX = obj->currentCoords.x;
                 u16 beforeY = obj->currentCoords.y;
 
-                SetPlayerFacingDirection(i, facing);
-                // Collision can refuse the step; force it so the queue stays
-                // authoritative instead of teleporting next frame.
-                if (obj->currentCoords.x == beforeX && obj->currentCoords.y == beforeY
-                 && obj->directionSequenceIndex == 0)
-                    Coop_ForcePresenceStep(obj, facing);
+                linkDirection(obj) = FlipVerticalAndClearForced(facing, linkDirection(obj));
+                // SetHeldMovement returns TRUE when already overridden (rejected).
+                if (ObjectEventSetHeldMovement(obj, action))
+                {
+                    SetPlayerFacingDirection(i, facing);
+                    if (obj->currentCoords.x == beforeX && obj->currentCoords.y == beforeY
+                     && obj->directionSequenceIndex == 0)
+                        Coop_ForcePresenceStep(obj, facing);
+                }
+                else
+                {
+                    // Held movement owns the glide; tip tracks this step's dest.
+                    sCoopQueuedTipX = beforeX;
+                    sCoopQueuedTipY = beforeY;
+                    switch (Coop_FacingToDirection(facing))
+                    {
+                    case DIR_NORTH: sCoopQueuedTipY--; break;
+                    case DIR_SOUTH: sCoopQueuedTipY++; break;
+                    case DIR_WEST:  sCoopQueuedTipX--; break;
+                    case DIR_EAST:  sCoopQueuedTipX++; break;
+                    }
+                    sCoopQueueTipValid = TRUE;
+                }
             }
             else if (!(x == 0 && y == 0))
             {
+                u8 faceAction = GetFaceDirectionMovementAction(Coop_FacingToDirection((u8)gHnsCoopMailbox.remoteFacing));
+
                 linkDirection(obj) = (u8)gHnsCoopMailbox.remoteFacing;
+                ObjectEventSetHeldMovement(obj, faceAction);
             }
         }
         ObjectEventUpdateElevation(obj, NULL);
@@ -3556,6 +3924,18 @@ void CB1_Overworld(void)
         // link never completes. The vanilla link flow above owns this once
         // CB1 switches to CB1_OverworldLink. Story sync also runs here so
         // presence-only sessions still exchange shared adventure flags/vars.
+        if (!sCoopWasOnField)
+        {
+            // Wake from battle/menu/special screen: restart spawn delay and
+            // clear stale movement so the partner re-enters cleanly.
+            sCoopFramesInOverworld = 0;
+            sCoopSpawnCooldown = 0;
+            sCoopDoorState = COOP_DOOR_NONE;
+            Coop_ClearPresenceStepQueue();
+            sCoopWasOnField = TRUE;
+        }
+        if (sCoopFramesInOverworld < 0xFFFF)
+            sCoopFramesInOverworld++;
         gHnsCoopMailbox.localMapId = (u32)gSaveBlock1Ptr->location.mapGroup
                                   | ((u32)gSaveBlock1Ptr->location.mapNum << 16);
         Coop_ProcessStorySyncFrame();
@@ -3563,8 +3943,19 @@ void CB1_Overworld(void)
         Coop_UpdateRemotePresence();
         Coop_SnapRemoteLinkPlayers();
         Coop_UpdateRemoteFollower();
+        Coop_ScrubSaveStaging();
 #endif
     }
+#if IS_HNS
+    else if (sCoopWasOnField)
+    {
+        // Sleep presence locomotion while battles/menus/special screens run.
+        Coop_ClearPresenceStepQueue();
+        sCoopDoorState = COOP_DOOR_NONE;
+        sCoopWasOnField = FALSE;
+        Coop_ScrubSaveStaging();
+    }
+#endif
 }
 
 #define TINT_NIGHT Q_8_8(0.456) | Q_8_8(0.456) << 8 | Q_8_8(0.615) << 16
@@ -4582,6 +4973,11 @@ static void Coop_InvalidatePresenceAfterFieldReload(void)
     }
     Coop_DestroyRemoteFollower();
     Coop_ClearPresenceStepQueue();
+    sCoopFramesInOverworld = 0;
+    sCoopSpawnCooldown = 0;
+    sCoopDoorState = COOP_DOOR_NONE;
+    sCoopPresenceGfxState = PLAYER_AVATAR_STATE_NORMAL;
+    sCoopWasOnField = FALSE;
     // Ask Android to force-publish our POSITION and request the peer's.
     gHnsCoopMailbox.localPresenceResync++;
 }
@@ -5613,6 +6009,27 @@ static u8 LinkPlayerGetCollision(u8 selfObjEventId, enum Direction direction, s1
     return MapGridGetCollisionAt(x, y);
 }
 
+#if IS_HNS
+// Stop the UpdateObjectEventCurrentMovement while-loop immediately when the
+// partner is idle; held-movement actions still run through the engine path.
+static bool8 Coop_PresenceMovementIdle(struct ObjectEvent *objectEvent, struct Sprite *sprite)
+{
+    (void)objectEvent;
+    (void)sprite;
+    return TRUE;
+}
+
+// Drive presence partners through the real OE movement executor so walk/run/
+// bike/surf/ledge get native sub-pixel interpolation instead of link-glides.
+static void SpriteCB_CoopPresence(struct Sprite *sprite)
+{
+    struct LinkPlayerObjectEvent *linkPlayerObjEvent = &gLinkPlayerObjectEvents[sprite->data[0]];
+    struct ObjectEvent *objEvent = &gObjectEvents[linkPlayerObjEvent->objEventId];
+
+    UpdateObjectEventCurrentMovement(objEvent, sprite, Coop_PresenceMovementIdle);
+}
+#endif
+
 static void CreateLinkPlayerSprite(u8 linkPlayerId, enum GameVersion gameVersion)
 {
     struct LinkPlayerObjectEvent *linkPlayerObjEvent = &gLinkPlayerObjectEvents[linkPlayerId];
@@ -5626,9 +6043,19 @@ static void CreateLinkPlayerSprite(u8 linkPlayerId, enum GameVersion gameVersion
         (void)gameVersion;
         // Heart & Soul's remote player must use the same boy/girl avatar set
         // selected on the remote save, independent of the link version byte.
-        objEvent->spriteId = CreateObjectGraphicsSprite(
-            GetPlayerAvatarGraphicsIdByStateIdAndGender(PLAYER_AVATAR_STATE_NORMAL, linkGender(objEvent)),
-            SpriteCB_LinkPlayer, 0, 0, 0);
+        // Presence partners may be on bike/surf — use the host-confirmed state.
+        {
+            u8 gfxState = sCoopPresenceGfxState;
+            void (*callback)(struct Sprite *) = SpriteCB_LinkPlayer;
+
+            if (gfxState > PLAYER_AVATAR_STATE_WATERING)
+                gfxState = PLAYER_AVATAR_STATE_NORMAL;
+            if (linkPlayerId == COOP_PRESENCE_LINK_ID)
+                callback = SpriteCB_CoopPresence;
+            objEvent->spriteId = CreateObjectGraphicsSprite(
+                GetPlayerAvatarGraphicsIdByStateIdAndGender(gfxState, linkGender(objEvent)),
+                callback, 0, 0, 0);
+        }
 #else
         switch (gameVersion)
         {

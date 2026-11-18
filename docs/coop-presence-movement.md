@@ -110,3 +110,24 @@ relaying each phone's POSITION claim to the partner.
 Fix: only `DestroySprite` when the object event is **`active`** and owns that
 sprite; never ForceClear `gPlayerAvatar.objectEventId`; skip follower
 ForceClear when the reserved slot is already empty.
+
+## Gen3 multiplayer technique port (mailbox v14)
+
+Techniques reimplemented from Wired-Ariel/gen3-poke-multiplayer ideas (not
+verbatim GPL code), adapted to PC World Host SoT:
+
+| Technique | HnS behavior |
+| --- | --- |
+| Spawn delay ~90f | `COOP_SPAWN_DELAY_FRAMES` after overworld entry / field return |
+| Spawn retry | `COOP_SPAWN_RETRY_FRAMES` cooldown on failed create |
+| Camera realign | `MoveObjectEventToMapCoords` after spawn |
+| Graphics resize | destroy+respawn on bike/surf/avatar state change |
+| HeldMovement | `ObjectEventSetHeldMovement` + `SpriteCB_CoopPresence` executor |
+| Step queue + hurry | existing queue; faster walk when depth ≥ 4 |
+| Door enter/exit | hold respawn after enter; open/close on exit |
+| Save scrub | staging scrub each OW CB1 + `SaveObjectEvents` strip |
+| Sleep/wake | clear queue off-field; restart spawn delay on wake |
+| Claim seq | avatarState high byte; World Host drops dup/late |
+
+Kept: ForceClear sprite-0 guard, reserved slots, host-authoritative POSITION
+relay, one-tap ZeroTier Join PC Host.

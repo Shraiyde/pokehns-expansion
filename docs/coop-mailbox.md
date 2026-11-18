@@ -49,6 +49,17 @@ force-publishes local POSITION and asks the peer to republish (`POSITION_RESYNC`
 Return-to-field previously skipped link-player sprite rebuild, leaving the partner
 avatar invisible after battles/menus; ROM now invalidates and respawns presence.
 
+## v14 (avatar locomotion / doors)
+
+| Field | Offset | Size | Writer | Notes |
+| --- | --- | --- | --- | --- |
+| `localAvatarState` | 2296 | 4 | ROM | `action:8 \| avatarState:8 \| doorPhase:8 \| claimSeq:8` |
+| `remoteAvatarState` | 2300 | 4 | Android | Host-confirmed peer copy |
+| **sizeof** | — | **2304** | — | was 2296 in v13 |
+
+`HNS_COOP_MAILBOX_VERSION` = **14**. POSITION wire payload is 8 words (adds
+follower + avatarState). World Host drops duplicate/late claimSeq values.
+
 ## Presence movement
 
 See [`docs/coop-presence-movement.md`](coop-presence-movement.md) for outdoor
