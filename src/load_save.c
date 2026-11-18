@@ -215,9 +215,10 @@ void SaveObjectEvents(void)
             gSaveBlock1Ptr->objectEvents[i].active = FALSE;
 #if IS_HNS
         // Co-op partner / remote follower must never serialize into the save —
-        // continue would otherwise show ghost or missing sprites.
+        // continue would otherwise show ghost or missing sprites. Match by
+        // co-op localId only: never wipe a real map NPC that occupies a
+        // reserved slot after loading an older save.
         if (gObjectEvents[i].localId == OBJ_EVENT_ID_REMOTE_FOLLOWER
-         || Coop_IsReservedPresenceObjectEventId((u8)i)
          || (gObjectEvents[i].localId >= OBJ_EVENT_ID_DYNAMIC_BASE
           && gObjectEvents[i].localId < OBJ_EVENT_ID_DYNAMIC_BASE + MAX_LINK_PLAYERS))
         {

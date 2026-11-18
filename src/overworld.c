@@ -3069,6 +3069,7 @@ static u8 sCoopDoorState;
 static u16 sCoopDoorTimer;
 static s16 sCoopDoorX;
 static s16 sCoopDoorY;
+static u8 sCoopLastRemoteDoorPhase;
 static bool8 sCoopWasOnField;
 
 static void Coop_ClearPresenceStepQueue(void)
@@ -3149,14 +3150,16 @@ static void Coop_EnqueuePathTo(s16 fromX, s16 fromY, s16 toX, s16 toY, u8 prefer
 }
 
 // Presence avatars must not get stuck on NPCs/collision — force the one-tile
-// glide the same way FacingHandler_DpadMovement does after a clear check.
+// step when HeldMovement rejects. Presence uses SpriteCB_CoopPresence (not the
+// link glide counter), so leave directionSequenceIndex at 0 or further queue
+// applies stay blocked until an 8-tile snap.
 static void Coop_ForcePresenceStep(struct ObjectEvent *obj, u8 facing)
 {
     s16 x, y;
 
     linkDirection(obj) = FlipVerticalAndClearForced(facing, linkDirection(obj));
     ObjectEventMoveDestCoords(obj, linkDirection(obj), &x, &y);
-    obj->directionSequenceIndex = 16;
+    obj->directionSequenceIndex = 0;
     ShiftObjectEventCoords(obj, x, y);
     ObjectEventUpdateElevation(obj, NULL);
 }
@@ -3235,6 +3238,13 @@ static void Coop_EnsurePresenceObjectSlot(void)
     Coop_ForceClearObjectEventSlot(COOP_PRESENCE_OBJ_EVENT_ID);
 }
 
+static bool8 Coop_IsCoopRemoteLocalId(u8 localId)
+{
+    return localId == OBJ_EVENT_ID_REMOTE_FOLLOWER
+        || (localId >= OBJ_EVENT_ID_DYNAMIC_BASE
+         && localId < OBJ_EVENT_ID_DYNAMIC_BASE + MAX_LINK_PLAYERS);
+}
+
 static void Coop_ScrubSaveStaging(void)
 {
     u8 i;
@@ -3242,15 +3252,13 @@ static void Coop_ScrubSaveStaging(void)
     // Save serializes gObjectEvents into SaveBlock1. Partner / remote-follower
     // entries must never persist or a continue shows ghosts / missing sprites.
     // Scrub the staging copy only — live screen objects stay untouched.
+    // Match by co-op localId (not reserved slot index) so a real map NPC that
+    // happens to occupy COUNT-1/COUNT-2 after an older save load is kept.
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         struct ObjectEvent *saved = &gSaveBlock1Ptr->objectEvents[i];
 
-        if (i == COOP_PRESENCE_OBJ_EVENT_ID
-         || i == COOP_REMOTE_FOLLOWER_OBJ_EVENT_ID
-         || saved->localId == OBJ_EVENT_ID_REMOTE_FOLLOWER
-         || (saved->localId >= OBJ_EVENT_ID_DYNAMIC_BASE
-          && saved->localId < OBJ_EVENT_ID_DYNAMIC_BASE + MAX_LINK_PLAYERS))
+        if (Coop_IsCoopRemoteLocalId(saved->localId))
         {
             memset(saved, 0, sizeof(*saved));
             saved->localId = 0xFF;
@@ -3266,32 +3274,30 @@ static void Coop_TickDoorMachine(struct ObjectEvent *obj, bool8 peerVisible)
 {
     u8 remoteDoor = (u8)((gHnsCoopMailbox.remoteAvatarState >> 16) & 0xFF);
     u8 behavior;
+    bool8 doorRising;
 
     if (sCoopDoorTimer != 0)
         sCoopDoorTimer--;
 
+    doorRising = (remoteDoor != 0 && remoteDoor != sCoopLastRemoteDoorPhase);
+
     switch (sCoopDoorState)
     {
     case COOP_DOOR_NONE:
-        if (!peerVisible && remoteDoor == 1)
+        // Only HOLD here when the avatar is already gone. If it is still active,
+        // Coop_UpdateRemotePresence owns ENTER_OPEN (open anim + destroy).
+        if (!peerVisible && remoteDoor == 1 && (obj == NULL || !obj->active))
         {
-            // Partner walked into a door on their screen: hold respawn so they
-            // do not flicker back in front of the threshold.
             sCoopDoorState = COOP_DOOR_HOLD;
             sCoopDoorTimer = COOP_DOOR_HOLD_FRAMES;
-            if (obj != NULL && obj->active)
-            {
-                sCoopDoorX = obj->currentCoords.x;
-                sCoopDoorY = obj->currentCoords.y;
-            }
-            else
-            {
-                sCoopDoorX = (s16)gHnsCoopMailbox.remoteX;
-                sCoopDoorY = (s16)gHnsCoopMailbox.remoteY;
-            }
+            sCoopDoorX = (s16)gHnsCoopMailbox.remoteX;
+            sCoopDoorY = (s16)gHnsCoopMailbox.remoteY;
         }
-        else if (peerVisible && remoteDoor == 2 && obj != NULL && obj->active)
+        else if (peerVisible && remoteDoor == 2 && doorRising
+              && obj != NULL && obj->active)
         {
+            // Edge-trigger on doorPhase 2: level-trigger retried open/close
+            // every cycle while the partner stands on a door facing south.
             behavior = MapGridGetMetatileBehaviorAt(obj->currentCoords.x, obj->currentCoords.y);
             if (MetatileBehavior_IsDoor(behavior) || MetatileBehavior_IsNonAnimDoor(behavior))
             {
@@ -3345,8 +3351,8 @@ static void Coop_TickDoorMachine(struct ObjectEvent *obj, bool8 peerVisible)
         break;
     }
 
+    sCoopLastRemoteDoorPhase = remoteDoor;
     (void)COOP_DOOR_GIVEUP_FRAMES;
-    (void)COOP_DOOR_ENTER_OPEN;
 }
 
 static bool8 Coop_TrySpawnPresenceAvatar(void)
@@ -3643,22 +3649,21 @@ static void Coop_SnapRemoteLinkPlayers(void)
                     SetPlayerFacingDirection(i, facing);
                     if (obj->currentCoords.x == beforeX && obj->currentCoords.y == beforeY
                      && obj->directionSequenceIndex == 0)
-                        Coop_ForcePresenceStep(obj, facing);
-                }
-                else
-                {
-                    // Held movement owns the glide; tip tracks this step's dest.
-                    sCoopQueuedTipX = beforeX;
-                    sCoopQueuedTipY = beforeY;
-                    switch (Coop_FacingToDirection(facing))
                     {
-                    case DIR_NORTH: sCoopQueuedTipY--; break;
-                    case DIR_SOUTH: sCoopQueuedTipY++; break;
-                    case DIR_WEST:  sCoopQueuedTipX--; break;
-                    case DIR_EAST:  sCoopQueuedTipX++; break;
+                        Coop_ForcePresenceStep(obj, facing);
+                        // Force-step consumed this tile; keep tip coherent when
+                        // the queue tip was only valid through EnqueuePathTo.
+                        if (!sCoopQueueTipValid || sCoopStepQueueCount == 0)
+                        {
+                            sCoopQueuedTipX = obj->currentCoords.x;
+                            sCoopQueuedTipY = obj->currentCoords.y;
+                            sCoopQueueTipValid = TRUE;
+                        }
                     }
-                    sCoopQueueTipValid = TRUE;
                 }
+                // On accept: do NOT rewind tip. EnqueuePathTo already parked tip
+                // at the end of the queued path; rewriting it to this step's
+                // destination re-enqueues duplicates next frame.
             }
             else if (!(x == 0 && y == 0))
             {
@@ -3926,11 +3931,14 @@ void CB1_Overworld(void)
         // presence-only sessions still exchange shared adventure flags/vars.
         if (!sCoopWasOnField)
         {
-            // Wake from battle/menu/special screen: restart spawn delay and
-            // clear stale movement so the partner re-enters cleanly.
-            sCoopFramesInOverworld = 0;
+            // Wake from battle/menu/special screen. Do NOT zero
+            // sCoopFramesInOverworld here: InvalidatePresence primes it to
+            // COOP_SPAWN_DELAY_FRAMES so the partner respawns immediately
+            // after field return (map NPCs already claimed slots). Cold map
+            // loads zero the counter explicitly in InitObjectEventsLocal.
             sCoopSpawnCooldown = 0;
             sCoopDoorState = COOP_DOOR_NONE;
+            sCoopLastRemoteDoorPhase = 0;
             Coop_ClearPresenceStepQueue();
             sCoopWasOnField = TRUE;
         }
@@ -4952,7 +4960,14 @@ static void InitObjectEventsLocal(void)
 #if IS_HNS
     // Warps/cutscenes wipe link players via ResetObjectEvents; still ask Android
     // for a fresh mutual POSITION exchange as soon as the field is up.
+    // Require the full spawn delay so map NPCs claim slots first.
     Coop_ClearPresenceStepQueue();
+    sCoopFramesInOverworld = 0;
+    sCoopSpawnCooldown = 0;
+    sCoopDoorState = COOP_DOOR_NONE;
+    sCoopLastRemoteDoorPhase = 0;
+    sCoopPresenceGfxState = PLAYER_AVATAR_STATE_NORMAL;
+    sCoopWasOnField = FALSE;
     gHnsCoopMailbox.localPresenceResync++;
 #endif
 }
@@ -4973,9 +4988,12 @@ static void Coop_InvalidatePresenceAfterFieldReload(void)
     }
     Coop_DestroyRemoteFollower();
     Coop_ClearPresenceStepQueue();
-    sCoopFramesInOverworld = 0;
+    // Skip the post-map-load spawn delay: return-to-field already spawned
+    // map NPCs, and the partner must reappear without a 90-frame gap.
+    sCoopFramesInOverworld = COOP_SPAWN_DELAY_FRAMES;
     sCoopSpawnCooldown = 0;
     sCoopDoorState = COOP_DOOR_NONE;
+    sCoopLastRemoteDoorPhase = 0;
     sCoopPresenceGfxState = PLAYER_AVATAR_STATE_NORMAL;
     sCoopWasOnField = FALSE;
     // Ask Android to force-publish our POSITION and request the peer's.
